@@ -1,0 +1,499 @@
+/*
+ * Copyright (C) 2026 Charles Michael Atkinson
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+/*
+ * green-theme.css
+ * Full green colour set for LibreMTD.
+ * Replaces dark-theme.css / light-theme.css entirely — not layered on top.
+ * Default theme; harmonises with the login screen.
+ */
+
+.root {
+    -fx-base:                         #e8f5ee;
+    -fx-background:                   #f4f9f6;
+    -fx-control-inner-background:     #ffffff;
+    -fx-control-inner-background-alt: derive(-fx-control-inner-background, -5%);
+    -fx-accent:                       #00703c;
+    -fx-focus-color:                  #00703c;
+    -fx-faint-focus-color:            #00703c20;
+    -fx-text-base-color:              #1a2e22;
+    -fx-text-background-color:        derive(-fx-background, -60%);
+    -fx-text-inner-color:             #1a2e22;
+    -fx-mark-color:                   #1a2e22;
+    -fx-mark-highlight-color:         derive(-fx-accent, -20%);
+}
+
+/* ── Buttons ───────────────────────────────────────────────────────────── */
+
+.button {
+    -fx-background-color: #5a7a65;
+    -fx-text-fill: #ffffff;
+}
+
+.button:hover {
+    -fx-background-color: #6a8a75;
+}
+
+.button:pressed {
+    -fx-background-color: #4a6a55;
+}
+
+.button:disabled {
+    /* Inherits -fx-opacity: 0.5 from application.css */
+}
+
+/* Primary action: HMRC green */
+.primary-action-button {
+    -fx-background-color: #00703c;
+    -fx-text-fill: #ffffff;
+}
+
+.primary-action-button:hover {
+    -fx-background-color: #00883f;
+}
+
+.primary-action-button:pressed {
+    -fx-background-color: #005a30;
+}
+
+.primary-action-button:disabled {
+    -fx-background-color: #b0c4b8;
+    -fx-text-fill: #e8f0eb;
+    -fx-opacity: 1.0;
+}
+
+/* Danger action: red-tinted, for disconnect / delete */
+.danger-action-button {
+    -fx-background-color: #a02020;
+    -fx-text-fill: #ffffff;
+}
+
+.danger-action-button:hover {
+    -fx-background-color: #b82626;
+}
+
+.danger-action-button:pressed {
+    -fx-background-color: #841a1a;
+}
+
+.danger-action-button:disabled {
+    -fx-background-color: #b0c4b8;
+    -fx-text-fill: #e8f0eb;
+    -fx-opacity: 1.0;
+}
+
+/* ── Check boxes and radio buttons ────────────────────────────────────── */
+.check-box .box {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #7aaa88;
+}
+
+.check-box:selected .mark {
+    -fx-background-color: #00703c;
+}
+
+.radio-button .radio {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #7aaa88;
+}
+
+/* ── Combo box: keep legible when only one option exists ──────────────── */
+.combo-box:disabled {
+    -fx-opacity: 1.0;
+}
+
+.combo-box:disabled .list-cell {
+    -fx-text-fill: #1a2e22;
+    -fx-opacity: 1.0;
+}
+
+/* ── Content area ─────────────────────────────────────────────────────── */
+.content-area {
+    -fx-background-color: #f4f9f6;
+}
+
+/* ── Content card ─────────────────────────────────────────────────────── */
+.content-card {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #b8d8c4;
+}
+
+.content-card .label {
+    -fx-text-fill: #1a2e22;
+}
+
+/* ── Dialogs ──────────────────────────────────────────────────────────── */
+.dialog-pane {
+    -fx-background-color: #f4f9f6;
+}
+
+.dialog-pane .header-panel {
+    -fx-background-color: #e0f0e8;
+}
+
+.dialog-pane .label {
+    -fx-text-fill: #1a2e22;
+}
+
+/* ── Disclaimer ───────────────────────────────────────────────────────── */
+.disclaimer-banner {
+    -fx-background-color: #fffbe6;
+    -fx-border-color: #f0c040;
+}
+
+.disclaimer-text {
+    -fx-text-fill: #7a5c00;
+}
+
+/* ── Edge-to-edge scroll ──────────────────────────────────────────────── */
+.edge-to-edge-scroll {
+    -fx-background-color: transparent;
+    -fx-background: transparent;
+}
+
+/* ── Expense total bar ────────────────────────────────────────────────── */
+.expense-total-bar {
+    -fx-background-color: #fdf4f0;
+    -fx-border-color: #d0b0a0;
+}
+
+.expense-total-value-label {
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #b03000;
+}
+
+/* ── Hint label ───────────────────────────────────────────────────────── */
+.hint-label {
+    -fx-text-fill: #5a7a65;
+}
+
+/* ── Label and text ───────────────────────────────────────────────────── */
+.label, .text {
+    -fx-text-fill: #1a2e22;
+}
+
+/* ── Lists ────────────────────────────────────────────────────────────── */
+.list-view {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #b8d8c4;
+}
+
+.list-cell {
+    -fx-background-color: #ffffff;
+    -fx-text-fill: #1a2e22;
+}
+
+.list-cell:odd {
+    -fx-background-color: #f0f8f3;
+}
+
+.list-cell:selected {
+    -fx-background-color: #00703c;
+    -fx-text-fill: #ffffff;
+}
+
+/* ── Menu bar ─────────────────────────────────────────────────────────── */
+.menu-bar {
+    -fx-background-color: #00703c;
+}
+
+.menu-bar .menu > .label,
+.menu-bar .menu > Text,
+.menu-bar .menu .text {
+    -fx-fill: #ffffff;
+    -fx-text-fill: #ffffff;
+}
+
+.menu:hover, .menu:focused, .menu:showing {
+    -fx-background-color: #005a30;
+}
+
+.menu:hover > .label,
+.menu:focused > .label,
+.menu:showing > .label {
+    -fx-text-fill: #ffffff;
+    -fx-fill: #ffffff;
+}
+
+.context-menu, .menu-item {
+    -fx-background-color: #ffffff;
+}
+
+.menu-item .label {
+    -fx-text-fill: #1a2e22;
+    -fx-fill: #1a2e22;
+}
+
+.menu-item:focused {
+    -fx-background-color: #00703c;
+}
+
+.menu-item:focused .label {
+    -fx-text-fill: #ffffff;
+    -fx-fill: #ffffff;
+}
+
+/* ── MTD connection status ────────────────────────────────────────────── */
+.mtd-status-connected {
+    -fx-text-fill: #00703c;
+}
+
+.mtd-status-error {
+    -fx-text-fill: #c0392b;
+}
+
+.mtd-status-authenticating {
+    -fx-text-fill: #b8860b;
+}
+
+.mtd-status-disconnected {
+    -fx-text-fill: #5a7a65;
+}
+
+/* ── Progress bar ─────────────────────────────────────────────────────── */
+.progress-bar > .track {
+    -fx-background-color: #d0e8d8;
+}
+
+.progress-bar > .bar {
+    -fx-background-color: #00703c;
+}
+
+/* ── Read-only field ──────────────────────────────────────────────────── */
+.readonly-field {
+    -fx-background-color: #eef6f1;
+    -fx-text-fill: #4a6a55;
+}
+
+/* ── Row label ────────────────────────────────────────────────────────── */
+.row-label {
+    -fx-text-fill: #3a5a44;
+}
+
+/* ── Scroll bars ──────────────────────────────────────────────────────── */
+.scroll-pane, .scroll-pane > .viewport {
+    -fx-background-color: #f4f9f6;
+}
+
+.scroll-bar {
+    -fx-background-color: #e0f0e8;
+}
+
+.scroll-bar .thumb {
+    -fx-background-color: #7aaa88;
+    -fx-background-radius: 4px;
+}
+
+.scroll-bar .thumb:hover {
+    -fx-background-color: #5a8a68;
+}
+
+/* ── Separator ────────────────────────────────────────────────────────── */
+.separator .line {
+    -fx-border-color: #b8d8c4;
+}
+
+/* ── Semantic status colours ──────────────────────────────────────────── */
+.status-success {
+    -fx-text-fill: #00703c;
+    -fx-font-weight: bold;
+}
+
+.status-error {
+    -fx-text-fill: #c0392b;
+}
+
+.status-warning {
+    -fx-text-fill: #b8860b;
+}
+
+/* ── Sidebar ──────────────────────────────────────────────────────────── */
+.sidebar {
+    -fx-background-color: #e0f0e8;
+}
+
+.sidebar .button {
+    -fx-background-color: transparent;
+    -fx-text-fill: #1a2e22;
+}
+
+.sidebar .button:hover {
+    -fx-background-color: #c0e0cc;
+}
+
+.sidebar .button:pressed {
+    -fx-background-color: #a8d0b8;
+}
+
+/* ── Status bar ───────────────────────────────────────────────────────── */
+.status-bar {
+    -fx-background-color: #e0f0e8 !important;
+    -fx-border-color: #b8d8c4;
+    -fx-border-width: 1 0 0 0;
+}
+
+/* ── Tables ───────────────────────────────────────────────────────────── */
+.table-view, .tree-table-view {
+    -fx-background-color: #ffffff;
+    -fx-table-cell-border-color: #d8ede0;
+}
+
+.table-view .column-header,
+.table-view .column-header-background {
+    -fx-background-color: #e0f0e8;
+}
+
+.table-view .column-header .label {
+    -fx-text-fill: #1a2e22;
+}
+
+.table-row-cell {
+    -fx-background-color: #ffffff;
+    -fx-text-fill: #1a2e22;
+}
+
+.table-row-cell:odd {
+    -fx-background-color: #f0f8f3;
+}
+
+.table-row-cell:selected {
+    -fx-background-color: #00703c;
+}
+
+.table-row-cell:selected .table-cell {
+    -fx-text-fill: #ffffff;
+}
+
+.table-cell {
+    -fx-text-fill: #1a2e22;
+}
+
+/* ── Tabs ─────────────────────────────────────────────────────────────── */
+.tab-pane .tab-header-area .tab-header-background {
+    -fx-background-color: #d0e8d8;
+}
+
+.tab {
+    -fx-background-color: #b8d8c4;
+}
+
+.tab .tab-label {
+    -fx-text-fill: #1a2e22;
+}
+
+.tab:selected {
+    -fx-background-color: #ffffff;
+}
+
+.tab:selected .tab-label {
+    -fx-text-fill: #1a2e22;
+}
+
+/* ── Text inputs ──────────────────────────────────────────────────────── */
+.text-field, .text-area, .combo-box, .choice-box, .spinner .text-field {
+    -fx-background-color: #ffffff;
+    -fx-text-fill: #1a2e22;
+    -fx-prompt-text-fill: #7aaa88;
+    -fx-border-color: #b8d8c4;
+    -fx-border-radius: 3px;
+}
+
+.text-field:focused, .password-field:focused {
+    -fx-border-color: #00703c;
+}
+
+/* ── Titled panes ─────────────────────────────────────────────────────── */
+.titled-pane > .title {
+    -fx-background-color: #d0e8d8;
+    -fx-text-fill: #1a2e22;
+}
+
+.titled-pane > .content {
+    -fx-background-color: #f4f9f6;
+    -fx-border-color: #b8d8c4;
+}
+
+/* ── Tooltips ─────────────────────────────────────────────────────────── */
+.tooltip {
+    -fx-background-color: #e0f0e8;
+    -fx-text-fill: #1a2e22;
+    -fx-border-color: #7aaa88;
+}
+
+/* ── Total bar ────────────────────────────────────────────────────────── */
+.total-bar {
+    -fx-background-color: #e8f5ee;
+    -fx-border-color: #a8d8b8;
+}
+
+/* ── Total value label ────────────────────────────────────────────────── */
+.total-value-label {
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #00703c;
+}
+
+/* ── Login screen (green theme only) ─────────────────────────────────── */
+/* This section is not present in the other colour .css files. It is here because the login screen uses this theme */
+.login-root {
+    -fx-background-color: #00703c;
+}
+
+.login-title {
+    -fx-font-size: 32px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #ffffff;
+}
+
+.login-subtitle {
+    -fx-font-size: 14px;
+    -fx-text-fill: #e8f5ee;
+}
+
+.login-dev-label {
+    -fx-font-size: 12px;
+    -fx-text-fill: #ffeb3b;
+    -fx-font-weight: bold;
+}
+
+.login-form-box {
+    -fx-background-color: #ffffff;
+    -fx-background-radius: 10px;
+    -fx-border-color: #a5d6a7;
+    -fx-border-radius: 10px;
+    -fx-border-width: 1px;
+}
+
+.login-form-title {
+    -fx-font-size: 18px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #00703c;
+}
+
+.login-register-button {
+    -fx-background-color: #005a30;
+    -fx-text-fill: #ffffff;
+}
+
+.login-register-button:hover {
+    -fx-background-color: #00703c;
+}
+
+.login-register-button:pressed {
+    -fx-background-color: #004525;
+}

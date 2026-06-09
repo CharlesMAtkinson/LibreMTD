@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=LibreMTD
+Comment=HMRC Making Tax Digital – self assessment for dividends, savings and property
+Exec=/opt/libremtd/bin/libremtd
+Icon=libremtd
+Type=Application
+Categories=Office;Finance;
+StartupWMClass=org.charlesatkinson.libremtd.LibreMTD

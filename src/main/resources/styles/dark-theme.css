@@ -1,0 +1,447 @@
+/*
+ * Copyright (C) 2026 Charles Michael Atkinson
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+/*
+ * dark-theme.css
+ * Full dark colour set for LibreMTD.
+ * Replaces light-theme.css entirely — not layered on top of it.
+ */
+
+.root {
+    -fx-base:                         #2b2b2b;
+    -fx-background:                   #2b2b2b;
+    -fx-control-inner-background:     #3c3f41;
+    -fx-control-inner-background-alt: derive(-fx-control-inner-background, -5%);
+    -fx-accent:                       #4e9fe0;
+    -fx-focus-color:                  #4e9fe0;
+    -fx-faint-focus-color:            #4e9fe020;
+    -fx-text-base-color:              #bbbbbb;
+    -fx-text-background-color:        derive(-fx-background, 60%);
+    -fx-text-inner-color:             #bbbbbb;
+    -fx-mark-color:                   #bbbbbb;
+    -fx-mark-highlight-color:         derive(-fx-accent, 20%);
+}
+
+/* ── Buttons ───────────────────────────────────────────────────────────── */
+
+/* Default button: mid-blue-grey, clearly lighter than the dark background
+   and clearly distinct from the 50%-opacity disabled state.              */
+.button {
+    -fx-background-color: #5a6470;
+    -fx-text-fill: #ffffff;
+}
+
+.button:hover {
+    -fx-background-color: #6b7585;
+}
+
+.button:pressed {
+    -fx-background-color: #48515c;
+}
+
+.button:disabled {
+    /* Inherits -fx-opacity: 0.5 from application.css */
+}
+
+/* Primary action: green, for submit / request / save */
+.primary-action-button {
+    -fx-background-color: #1f824a;
+    -fx-text-fill: #ffffff;
+}
+
+.primary-action-button:hover {
+    -fx-background-color: #259958;
+}
+
+.primary-action-button:pressed {
+    -fx-background-color: #196b3c;
+}
+
+.primary-action-button:disabled {
+    -fx-background-color: #444444;
+    -fx-text-fill: #777777;
+    -fx-opacity: 1.0;   /* override the global 0.5 so colour carries the meaning */
+}
+
+/* Danger action: red-tinted, for disconnect / delete */
+.danger-action-button {
+    -fx-background-color: #8b2020;
+    -fx-text-fill: #ffffff;
+}
+
+.danger-action-button:hover {
+    -fx-background-color: #a32626;
+}
+
+.danger-action-button:pressed {
+    -fx-background-color: #6e1818;
+}
+
+.danger-action-button:disabled {
+    -fx-background-color: #444444;
+    -fx-text-fill: #777777;
+    -fx-opacity: 1.0;
+}
+
+/* ── Check boxes and radio buttons ────────────────────────────────────── */
+.check-box .box {
+    -fx-background-color: #3c3f41;
+    -fx-border-color: #777777;
+}
+
+.check-box:selected .mark {
+    -fx-background-color: #bbbbbb;
+}
+
+.radio-button .radio {
+    -fx-background-color: #3c3f41;
+    -fx-border-color: #777777;
+}
+
+/* ── Combo box: keep legible when only one option exists ──────────────── */
+.combo-box:disabled {
+    -fx-opacity: 1.0;
+}
+
+.combo-box:disabled .list-cell {
+    -fx-text-fill: #bbbbbb;
+    -fx-opacity: 1.0;
+}
+
+/* ── Content area ─────────────────────────────────────────────────────── */
+.content-area {
+    -fx-background-color: #2b2b2b;
+}
+
+/* ── Content card ─────────────────────────────────────────────────────── */
+.content-card {
+    -fx-background-color: #3c3f41;
+    -fx-border-color: #555555;
+}
+
+.content-card .label {
+    -fx-text-fill: #bbbbbb;
+}
+
+/* ── Dialogs ──────────────────────────────────────────────────────────── */
+.dialog-pane {
+    -fx-background-color: #2b2b2b;
+}
+
+.dialog-pane .header-panel {
+    -fx-background-color: #3c3f41;
+}
+
+.dialog-pane .label {
+    -fx-text-fill: #bbbbbb;
+}
+
+/* ── Disclaimer ───────────────────────────────────────────────────────── */
+.disclaimer-banner {
+    -fx-background-color: #3a3000;
+    -fx-border-color: #8a6e00;
+}
+
+.disclaimer-text {
+    -fx-text-fill: #d4aa40;
+}
+
+/* ── Edge-to-edge scroll ──────────────────────────────────────────────── */
+.edge-to-edge-scroll {
+    -fx-background-color: transparent;
+    -fx-background: transparent;
+}
+
+/* ── Expense total bar ────────────────────────────────────────────────── */
+.expense-total-bar {
+    -fx-background-color: #3a1a00;
+    -fx-border-color: #6a3a10;
+}
+
+.expense-total-value-label {
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #e07040;
+}
+
+/* ── Hint label ───────────────────────────────────────────────────────── */
+.hint-label {
+    -fx-text-fill: #888888;
+}
+
+/* ── Label and text ───────────────────────────────────────────────────── */
+.label, .text {
+    -fx-text-fill: #bbbbbb;
+}
+
+/* ── Lists ────────────────────────────────────────────────────────────── */
+.list-view {
+    -fx-background-color: #2b2b2b;
+    -fx-border-color: #555555;
+}
+
+.list-cell {
+    -fx-background-color: #2b2b2b;
+    -fx-text-fill: #bbbbbb;
+}
+
+.list-cell:odd {
+    -fx-background-color: #313335;
+}
+
+.list-cell:selected {
+    -fx-background-color: #4e9fe0;
+    -fx-text-fill: #ffffff;
+}
+
+/* ── Menu bar ─────────────────────────────────────────────────────────── */
+.menu-bar {
+    -fx-background-color: #3c3f41;
+}
+
+.menu-bar .menu > .label,
+.menu-bar .menu > Text,
+.menu-bar .menu .text {
+    -fx-fill: #bbbbbb;
+    -fx-text-fill: #bbbbbb;
+}
+
+.menu:hover, .menu:focused, .menu:showing {
+    -fx-background-color: #4e9fe0;
+}
+
+.menu:hover > .label,
+.menu:focused > .label,
+.menu:showing > .label {
+    -fx-text-fill: #ffffff;
+}
+
+.context-menu, .menu-item {
+    -fx-background-color: #3c3f41;
+}
+
+.menu-item .label {
+    -fx-text-fill: #bbbbbb;
+    -fx-fill: #bbbbbb;
+}
+
+.menu-item:focused {
+    -fx-background-color: #4e9fe0;
+}
+
+.menu-item:focused .label {
+    -fx-text-fill: #ffffff;
+}
+
+/* ── MTD connection status ────────────────────────────────────────────── */
+.mtd-status-connected {
+    -fx-text-fill: #4caf7d;
+}
+
+.mtd-status-error {
+    -fx-text-fill: #e05050;
+}
+
+.mtd-status-authenticating {
+    -fx-text-fill: #d4aa40;
+}
+
+.mtd-status-disconnected {
+    -fx-text-fill: #888888;
+}
+
+/* ── Progress bar ─────────────────────────────────────────────────────── */
+.progress-bar > .track {
+    -fx-background-color: #3c3f41;
+}
+
+.progress-bar > .bar {
+    -fx-background-color: #4e9fe0;
+}
+
+/* ── Read-only field ──────────────────────────────────────────────────── */
+.readonly-field {
+    -fx-background-color: #2b2b2b;
+    -fx-text-fill: #888888;
+}
+
+/* ── Row label ────────────────────────────────────────────────────────── */
+.row-label {
+    -fx-text-fill: #aaaaaa;
+}
+
+/* ── Scroll bars ──────────────────────────────────────────────────────── */
+.scroll-pane, .scroll-pane > .viewport {
+    -fx-background-color: #2b2b2b;
+}
+
+.scroll-bar {
+    -fx-background-color: #3c3f41;
+}
+
+.scroll-bar .thumb {
+    -fx-background-color: #555a5c;
+    -fx-background-radius: 4px;
+}
+
+.scroll-bar .thumb:hover {
+    -fx-background-color: #6a6f71;
+}
+
+/* ── Separator ────────────────────────────────────────────────────────── */
+.separator .line {
+    -fx-border-color: #555555;
+}
+
+/* ── Semantic status colours ──────────────────────────────────────────── */
+.status-success {
+    -fx-text-fill: #4caf7d;
+    -fx-font-weight: bold;
+}
+
+.status-error {
+    -fx-text-fill: #e05050;
+}
+
+.status-warning {
+    -fx-text-fill: #d4aa40;
+}
+
+/* ── Sidebar ──────────────────────────────────────────────────────────── */
+.sidebar {
+    -fx-background-color: #313335;
+}
+
+.sidebar .button {
+    -fx-background-color: transparent;
+    -fx-text-fill: #bbbbbb;
+}
+
+.sidebar .button:hover {
+    -fx-background-color: #4c5052;
+}
+
+.sidebar .button:pressed {
+    -fx-background-color: #3a3d3f;
+}
+
+/* ── Status bar ───────────────────────────────────────────────────────── */
+.status-bar {
+    -fx-background-color: #2b2b2b !important;
+    -fx-border-color: #444444;
+    -fx-border-width: 1 0 0 0;
+}
+
+/* ── Tables ───────────────────────────────────────────────────────────── */
+.table-view, .tree-table-view {
+    -fx-background-color: #2b2b2b;
+    -fx-table-cell-border-color: #444444;
+}
+
+.table-view .column-header,
+.table-view .column-header-background {
+    -fx-background-color: #3c3f41;
+}
+
+.table-view .column-header .label {
+    -fx-text-fill: #bbbbbb;
+}
+
+.table-row-cell {
+    -fx-background-color: #2b2b2b;
+    -fx-text-fill: #bbbbbb;
+}
+
+.table-row-cell:odd {
+    -fx-background-color: #313335;
+}
+
+.table-row-cell:selected {
+    -fx-background-color: #4e9fe0;
+}
+
+.table-row-cell:selected .table-cell {
+    -fx-text-fill: #ffffff;
+}
+
+.table-cell {
+    -fx-text-fill: #bbbbbb;
+}
+
+/* ── Tabs ─────────────────────────────────────────────────────────────── */
+.tab-pane .tab-header-area .tab-header-background {
+    -fx-background-color: #3c3f41;
+}
+
+.tab {
+    -fx-background-color: #4c5052;
+}
+
+.tab .tab-label {
+    -fx-text-fill: #bbbbbb;
+}
+
+.tab:selected {
+    -fx-background-color: #2b2b2b;
+}
+
+.tab:selected .tab-label {
+    -fx-text-fill: #ffffff;
+}
+
+/* ── Text inputs ──────────────────────────────────────────────────────── */
+.text-field, .text-area, .combo-box, .choice-box, .spinner .text-field {
+    -fx-background-color: #3c3f41;
+    -fx-text-fill: #bbbbbb;
+    -fx-prompt-text-fill: #777777;
+    -fx-border-color: #555555;
+    -fx-border-radius: 3px;
+}
+.text-field:focused, .password-field:focused {
+    -fx-border-color: #4e9fe0;
+}
+
+/* ── Titled panes ─────────────────────────────────────────────────────── */
+.titled-pane > .title {
+    -fx-background-color: #3c3f41;
+    -fx-text-fill: #bbbbbb;
+}
+
+.titled-pane > .content {
+    -fx-background-color: #2b2b2b;
+    -fx-border-color: #444444;
+}
+
+/* ── Tooltips ─────────────────────────────────────────────────────────── */
+.tooltip {
+    -fx-background-color: #4c5052;
+    -fx-text-fill: #dddddd;
+    -fx-border-color: #666666;
+}
+
+/* ── Total bar ────────────────────────────────────────────────────────── */
+.total-bar {
+    -fx-background-color: #2a3a2a;
+    -fx-border-color: #3a5a3a;
+}
+
+/* ── Total value label ────────────────────────────────────────────────── */
+.total-value-label {
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #4caf7d;
+}

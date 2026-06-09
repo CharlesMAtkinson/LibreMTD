@@ -1,0 +1,445 @@
+/*
+ * Copyright (C) 2026 Charles Michael Atkinson
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+/*
+ * light-theme.css
+ * Full light colour set for LibreMTD.
+ * Replaces dark-theme.css entirely — not layered on top of it.
+ */
+
+.root {
+    -fx-base:                         #ececec;
+    -fx-background:                   #ececec;
+    -fx-control-inner-background:     #ffffff;
+    -fx-control-inner-background-alt: derive(-fx-control-inner-background, -5%);
+    -fx-accent:                       #0096c9;
+    -fx-focus-color:                  #0096c9;
+    -fx-faint-focus-color:            #0096c920;
+    -fx-text-base-color:              #212121;
+    -fx-text-background-color:        derive(-fx-background, -60%);
+    -fx-text-inner-color:             #212121;
+    -fx-mark-color:                   #212121;
+    -fx-mark-highlight-color:         derive(-fx-accent, -20%);
+}
+
+/* ── Buttons ───────────────────────────────────────────────────────────── */
+
+.button {
+    -fx-background-color: #7a8a9a;
+    -fx-text-fill: #ffffff;
+}
+
+.button:hover {
+    -fx-background-color: #8a9aaa;
+}
+
+.button:pressed {
+    -fx-background-color: #697888;
+}
+
+.button:disabled {
+    /* Inherits -fx-opacity: 0.5 from application.css */
+}
+
+/* Primary action: green, for submit / request / save */
+.primary-action-button {
+    -fx-background-color: #1a6b3c;
+    -fx-text-fill: #ffffff;
+}
+
+.primary-action-button:hover {
+    -fx-background-color: #1f824a;
+}
+
+.primary-action-button:pressed {
+    -fx-background-color: #155530;
+}
+
+.primary-action-button:disabled {
+    -fx-background-color: #b0b0b0;
+    -fx-text-fill: #e0e0e0;
+    -fx-opacity: 1.0;
+}
+
+/* Danger action: red-tinted, for disconnect / delete */
+.danger-action-button {
+    -fx-background-color: #a02020;
+    -fx-text-fill: #ffffff;
+}
+
+.danger-action-button:hover {
+    -fx-background-color: #b82626;
+}
+
+.danger-action-button:pressed {
+    -fx-background-color: #841a1a;
+}
+
+.danger-action-button:disabled {
+    -fx-background-color: #b0b0b0;
+    -fx-text-fill: #e0e0e0;
+    -fx-opacity: 1.0;
+}
+
+/* ── Check boxes and radio buttons ────────────────────────────────────── */
+.check-box .box {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #999999;
+}
+
+.check-box:selected .mark {
+    -fx-background-color: #212121;
+}
+
+.radio-button .radio {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #999999;
+}
+
+/* ── Combo box: keep legible when only one option exists ──────────────── */
+.combo-box:disabled {
+    -fx-opacity: 1.0;
+}
+
+.combo-box:disabled .list-cell {
+    -fx-text-fill: #212121;
+    -fx-opacity: 1.0;
+}
+
+/* ── Content area ─────────────────────────────────────────────────────── */
+.content-area {
+    -fx-background-color: #ffffff;
+}
+
+/* ── Content card ─────────────────────────────────────────────────────── */
+.content-card {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #d0d0d0;
+}
+
+.content-card .label {
+    -fx-text-fill: #212121;
+}
+
+/* ── Dialogs ──────────────────────────────────────────────────────────── */
+.dialog-pane {
+    -fx-background-color: #ececec;
+}
+
+.dialog-pane .header-panel {
+    -fx-background-color: #dcdcdc;
+}
+
+.dialog-pane .label {
+    -fx-text-fill: #212121;
+}
+
+/* ── Disclaimer ───────────────────────────────────────────────────────── */
+.disclaimer-banner {
+    -fx-background-color: #fffbe6;
+    -fx-border-color: #f0c040;
+}
+
+.disclaimer-text {
+    -fx-text-fill: #7a5c00;
+}
+
+/* ── Edge-to-edge scroll ──────────────────────────────────────────────── */
+.edge-to-edge-scroll {
+    -fx-background-color: transparent;
+    -fx-background: transparent;
+}
+
+/* ── Expense total bar ────────────────────────────────────────────────── */
+.expense-total-bar {
+    -fx-background-color: #fdf4f0;
+    -fx-border-color: #d0b0a0;
+}
+
+.expense-total-value-label {
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #b03000;
+}
+
+/* ── Hint label ───────────────────────────────────────────────────────── */
+.hint-label {
+    -fx-text-fill: #777777;
+}
+
+/* ── Label and text ───────────────────────────────────────────────────── */
+.label, .text {
+    -fx-text-fill: #212121;
+}
+
+/* ── Lists ────────────────────────────────────────────────────────────── */
+.list-view {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #d0d0d0;
+}
+
+.list-cell {
+    -fx-background-color: #ffffff;
+    -fx-text-fill: #212121;
+}
+
+.list-cell:odd {
+    -fx-background-color: #f5f5f5;
+}
+
+.list-cell:selected {
+    -fx-background-color: #0096c9;
+    -fx-text-fill: #ffffff;
+}
+
+/* ── Menu bar ─────────────────────────────────────────────────────────── */
+.menu-bar {
+    -fx-background-color: #f5f5f5;
+}
+
+.menu-bar .menu > .label,
+.menu-bar .menu > Text,
+.menu-bar .menu .text {
+    -fx-fill: #212121;
+    -fx-text-fill: #212121;
+}
+
+.menu:hover, .menu:focused, .menu:showing {
+    -fx-background-color: #0096c9;
+}
+
+.menu:hover > .label,
+.menu:focused > .label,
+.menu:showing > .label {
+    -fx-text-fill: #ffffff;
+}
+
+.context-menu, .menu-item {
+    -fx-background-color: #ffffff;
+}
+
+.menu-item .label {
+    -fx-text-fill: #212121;
+    -fx-fill: #212121;
+}
+
+.menu-item:focused {
+    -fx-background-color: #0096c9;
+}
+
+.menu-item:focused .label {
+    -fx-text-fill: #ffffff;
+}
+
+/* ── MTD connection status ────────────────────────────────────────────── */
+.mtd-status-connected {
+    -fx-text-fill: #1a6b3c;
+}
+
+.mtd-status-error {
+    -fx-text-fill: #c0392b;
+}
+
+.mtd-status-authenticating {
+    -fx-text-fill: #b8860b;
+}
+
+.mtd-status-disconnected {
+    -fx-text-fill: #777777;
+}
+
+/* ── Progress bar ─────────────────────────────────────────────────────── */
+.progress-bar > .track {
+    -fx-background-color: #dcdcdc;
+}
+
+.progress-bar > .bar {
+    -fx-background-color: #0096c9;
+}
+
+/* ── Read-only field ──────────────────────────────────────────────────── */
+.readonly-field {
+    -fx-background-color: #f0f0f0;
+    -fx-text-fill: #555555;
+}
+
+/* ── Row label ────────────────────────────────────────────────────────── */
+.row-label {
+    -fx-text-fill: #444444;
+}
+
+/* ── Scroll bars ──────────────────────────────────────────────────────── */
+.scroll-pane, .scroll-pane > .viewport {
+    -fx-background-color: #ffffff;
+}
+
+.scroll-bar {
+    -fx-background-color: #e8e8e8;
+}
+
+.scroll-bar .thumb {
+    -fx-background-color: #b0b0b0;
+    -fx-background-radius: 4px;
+}
+
+.scroll-bar .thumb:hover {
+    -fx-background-color: #909090;
+}
+
+/* ── Separator ────────────────────────────────────────────────────────── */
+.separator .line {
+    -fx-border-color: #d0d0d0;
+}
+
+/* ── Semantic status colours ──────────────────────────────────────────── */
+.status-success {
+    -fx-text-fill: #1a6b3c;
+    -fx-font-weight: bold;
+}
+
+.status-error {
+    -fx-text-fill: #c0392b;
+}
+
+.status-warning {
+    -fx-text-fill: #b8860b;
+}
+
+/* ── Sidebar ──────────────────────────────────────────────────────────── */
+.sidebar {
+    -fx-background-color: #e0e0e0;
+}
+
+.sidebar .button {
+    -fx-background-color: transparent;
+    -fx-text-fill: #212121;
+}
+
+.sidebar .button:hover {
+    -fx-background-color: #c8c8c8;
+}
+
+.sidebar .button:pressed {
+    -fx-background-color: #b0b0b0;
+}
+
+/* ── Status bar ───────────────────────────────────────────────────────── */
+.status-bar {
+    -fx-background-color: #e8e8e8 !important;
+    -fx-border-color: #cccccc;
+    -fx-border-width: 1 0 0 0;
+}
+
+/* ── Tables ───────────────────────────────────────────────────────────── */
+.table-view, .tree-table-view {
+    -fx-background-color: #ffffff;
+    -fx-table-cell-border-color: #e0e0e0;
+}
+
+.table-view .column-header,
+.table-view .column-header-background {
+    -fx-background-color: #f0f0f0;
+}
+
+.table-view .column-header .label {
+    -fx-text-fill: #212121;
+}
+
+.table-row-cell {
+    -fx-background-color: #ffffff;
+    -fx-text-fill: #212121;
+}
+
+.table-row-cell:odd {
+    -fx-background-color: #f5f5f5;
+}
+
+.table-row-cell:selected {
+    -fx-background-color: #0096c9;
+}
+
+.table-row-cell:selected .table-cell {
+    -fx-text-fill: #ffffff;
+}
+
+.table-cell {
+    -fx-text-fill: #212121;
+}
+
+/* ── Tabs ─────────────────────────────────────────────────────────────── */
+.tab-pane .tab-header-area .tab-header-background {
+    -fx-background-color: #dcdcdc;
+}
+
+.tab {
+    -fx-background-color: #cccccc;
+}
+
+.tab .tab-label {
+    -fx-text-fill: #212121;
+}
+
+.tab:selected {
+    -fx-background-color: #ffffff;
+}
+
+.tab:selected .tab-label {
+    -fx-text-fill: #212121;
+}
+
+/* ── Text inputs ──────────────────────────────────────────────────────── */
+.text-field, .text-area, .combo-box, .choice-box, .spinner .text-field {
+    -fx-background-color: #ffffff;
+    -fx-text-fill: #212121;
+    -fx-prompt-text-fill: #aaaaaa;
+    -fx-border-color: #cccccc;
+    -fx-border-radius: 3px;
+}
+.text-field:focused, .password-field:focused {
+    -fx-border-color: #0096c9;
+}
+
+/* ── Titled panes ─────────────────────────────────────────────────────── */
+.titled-pane > .title {
+    -fx-background-color: #dcdcdc;
+    -fx-text-fill: #212121;
+}
+
+.titled-pane > .content {
+    -fx-background-color: #ececec;
+    -fx-border-color: #cccccc;
+}
+
+/* ── Tooltips ─────────────────────────────────────────────────────────── */
+.tooltip {
+    -fx-background-color: #f5f5f5;
+    -fx-text-fill: #212121;
+    -fx-border-color: #cccccc;
+}
+
+/* ── Total bar ────────────────────────────────────────────────────────── */
+.total-bar {
+    -fx-background-color: #f0f4f0;
+    -fx-border-color: #c0d0c0;
+}
+
+/* ── Total value label ────────────────────────────────────────────────── */
+.total-value-label {
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #1a6b3c;
+}
