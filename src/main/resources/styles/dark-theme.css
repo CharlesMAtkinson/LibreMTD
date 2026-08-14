@@ -98,6 +98,16 @@
 }
 
 /* ── Check boxes and radio buttons ────────────────────────────────────── */
+/* Explicit text-fill rather than relying on the -fx-text-base-color /
+   -fx-text-background-color fallback that CheckBox/RadioButton use by
+   default — that fallback was producing invisible label text in the green
+   theme (confirmed there by forcing an inline -fx-text-fill: red override).
+   Added here too as a precaution, on the same reasoning as
+   .content-card .label / .dialog-pane .label below already being explicit. */
+.check-box, .radio-button {
+    -fx-text-fill: #bbbbbb;
+}
+
 .check-box .box {
     -fx-background-color: #3c3f41;
     -fx-border-color: #777777;

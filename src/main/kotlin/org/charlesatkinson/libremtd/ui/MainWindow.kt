@@ -47,19 +47,29 @@ enum class MtdConnectionStatus {
     Disconnected, Authenticating, Connected, Error
 }
 
-enum class NavDestination(val label: String) {
+/**
+ * [label] is the full descriptive text — used for the status bar ("Viewing: ...")
+ * and anywhere else a fully-qualified destination name is needed.
+ * [navLabel] is the short text shown on the sidebar button itself, where the
+ * enclosing section header (INCOME / EXPENSES / PROPERTIES / etc.) already
+ * supplies context, so it defaults to [label] and is only overridden where a
+ * shorter form is needed to fit the sidebar width.
+ */
+enum class NavDestination(val label: String, val navLabel: String = label) {
     AboutLibreMTD("About LibreMTD"),
     Dashboard("Dashboard"),
-    DividendIncome("Income (dividends)"),
-    Expenses("Expenses"),
+    DividendIncome("Income (dividends)", navLabel = "Dividends"),
+    ExpensesPropertyUk("Expenses (property, UK)", navLabel = "UK property"),
+    ExpensesPropertyForeign("Expenses (property, foreign)", navLabel = "Foreign property"),
     ExportSpreadsheet("Export Spreadsheet"),
     Help("Help"),
     HmrcConnect("Connect"),
     HmrcLinks("HMRC Links"),
     ImportSpreadsheet("Import Spreadsheet"),
-    Properties("Properties"),
-    PropertyIncome("Income (property)"),
-    SavingsIncome("Income (savings)"),
+    IncomePropertyUk("Income (property, UK)", navLabel = "UK property"),
+    IncomePropertyForeign("Income (property, foreign)", navLabel = "Foreign property"),
+    Properties("Properties", navLabel = "Manage"),
+    SavingsIncome("Income (savings)", navLabel = "Savings"),
     Settings("Settings"),
     Submissions("Submissions"),
     TaxSummary("Tax Summary"),
@@ -136,11 +146,12 @@ class MainWindow(
 
         val scroll = ScrollPane(contentArea).apply {
             isFitToWidth  = true
-            isFitToHeight = true
+            isFitToHeight = false
             hbarPolicy    = ScrollPane.ScrollBarPolicy.NEVER
             vbarPolicy    = ScrollPane.ScrollBarPolicy.AS_NEEDED
             styleClass.add("edge-to-edge-scroll")
         }
+
         root.center = scroll
 
         navigateTo(NavDestination.Dashboard)
@@ -219,7 +230,7 @@ class MainWindow(
             }
         }
 
-        fun navButton(dest: NavDestination) = Button(dest.label).apply {
+        fun navButton(dest: NavDestination) = Button(dest.navLabel).apply {
             maxWidth           = Double.MAX_VALUE
             isFocusTraversable = false
             styleClass.setAll("menu")
@@ -237,11 +248,15 @@ class MainWindow(
             navButton(NavDestination.Dashboard),
             navButton(NavDestination.TaxSummary),
             Separator(),
-            sectionLabel("ENTER DATA"),
+            sectionLabel("INCOME"),
             navButton(NavDestination.DividendIncome),
-            navButton(NavDestination.PropertyIncome),
+            navButton(NavDestination.IncomePropertyUk),
+            navButton(NavDestination.IncomePropertyForeign),
             navButton(NavDestination.SavingsIncome),
-            navButton(NavDestination.Expenses),
+            sectionLabel("EXPENSES"),
+            navButton(NavDestination.ExpensesPropertyUk),
+            navButton(NavDestination.ExpensesPropertyForeign),
+            sectionLabel("PROPERTIES"),
             navButton(NavDestination.Properties),
             Separator(),
             sectionLabel("HMRC"),
@@ -285,27 +300,32 @@ class MainWindow(
     }
 
     private fun buildFreshPane(dest: NavDestination): javafx.scene.Node = when (dest) {
-        NavDestination.AboutLibreMTD     -> HelpPane(
+        NavDestination.AboutLibreMTD          -> HelpPane(
             userId         = user.id,
         )
-        NavDestination.Dashboard         -> DashboardPane().root
-        NavDestination.DividendIncome    -> DividendIncomePane(
+        NavDestination.Dashboard              -> DashboardPane().root
+        NavDestination.DividendIncome         -> DividendIncomePane(
             scope          = scope,
             userId         = user.id,
             onStatusChange = { msg -> setStatus(msg) },
         ).root
-        NavDestination.Expenses          -> ExpensesPane(
+        NavDestination.ExpensesPropertyUk     -> ExpensesPropertyUkPane(
             scope          = scope,
             userId         = user.id,
             onStatusChange = { msg -> setStatus(msg) },
         ).root
-        NavDestination.ExportSpreadsheet -> ExportSpreadsheetPane(
+        NavDestination.ExpensesPropertyForeign -> ExpensesPropertyForeignPane(
             scope          = scope,
             userId         = user.id,
             onStatusChange = { msg -> setStatus(msg) },
         ).root
-        NavDestination.Help              -> HelpPane(userId = user.id)
-        NavDestination.HmrcConnect       -> ConnectPane(
+        NavDestination.ExportSpreadsheet      -> ExportSpreadsheetPane(
+            scope          = scope,
+            userId         = user.id,
+            onStatusChange = { msg -> setStatus(msg) },
+        ).root
+        NavDestination.Help                   -> HelpPane(userId = user.id)
+        NavDestination.HmrcConnect            -> ConnectPane(
             scope              = scope,
             userId             = user.id,
             settingsRepository = settingsRepository,
@@ -317,41 +337,45 @@ class MainWindow(
                 }
             },
         ).root
-        NavDestination.HmrcLinks         -> HelpHmrcPane()
-        NavDestination.ImportSpreadsheet -> ImportSpreadsheetPane(
+        NavDestination.HmrcLinks              -> HelpHmrcPane()
+        NavDestination.ImportSpreadsheet      -> ImportSpreadsheetPane(
             scope          = scope,
             userId         = user.id,
             onStatusChange = { msg -> setStatus(msg) },
         ).root
-        NavDestination.Properties        -> PropertiesPane(
+        NavDestination.IncomePropertyUk       -> IncomePropertyUkPane(
             scope          = scope,
             userId         = user.id,
             onStatusChange = { msg -> setStatus(msg) },
         ).root
-        NavDestination.PropertyIncome    -> PropertyIncomePane(
+        NavDestination.IncomePropertyForeign  -> IncomePropertyForeignPane(
             scope          = scope,
             userId         = user.id,
             onStatusChange = { msg -> setStatus(msg) },
         ).root
-        NavDestination.SavingsIncome     -> SavingsIncomePane(
+        NavDestination.Properties             -> PropertiesPane(
+            scope              = scope,
+            userId             = user.id,
+            settingsRepository = settingsRepository,
+            onStatusChange     = { msg -> setStatus(msg) },
+        ).root
+        NavDestination.SavingsIncome          -> SavingsIncomePane(
             scope          = scope,
             userId         = user.id,
             onStatusChange = { msg -> setStatus(msg) },
         ).root
-        NavDestination.Settings          -> SettingsPane(
+        NavDestination.Settings               -> SettingsPane(
             scope              = scope,
             userId             = user.id,
             settingsRepository = settingsRepository,
             onStatusChange     = { msg -> setStatus(msg) },
             onSettingsSaved    = {
                 apiClient = null
-                // Settings changes may affect cached panes that show HMRC data.
-                // Drop them so they are rebuilt with fresh state on next visit.
                 paneCache.remove(NavDestination.Submissions)
                 paneCache.remove(NavDestination.TaxSummary)
             },
         ).root
-        NavDestination.Submissions       -> SubmissionsPane(
+        NavDestination.Submissions            -> SubmissionsPane(
             scope              = scope,
             userId             = user.id,
             settingsRepository = settingsRepository,
@@ -359,7 +383,7 @@ class MainWindow(
             getContext         = { currentClientContext() },
             onStatusChange     = { msg -> setStatus(msg) },
         ).root
-        NavDestination.TaxSummary        -> TaxSummaryPane(
+        NavDestination.TaxSummary             -> TaxSummaryPane(
             scope              = scope,
             userId             = user.id,
             settingsRepository = settingsRepository,

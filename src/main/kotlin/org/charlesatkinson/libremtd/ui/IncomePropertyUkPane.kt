@@ -27,9 +27,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.javafx.JavaFx
 import kotlinx.coroutines.launch
-import org.charlesatkinson.libremtd.database.ExpenseEntry
-import org.charlesatkinson.libremtd.database.ExpenseRepository
+import org.charlesatkinson.libremtd.database.IncomePropertyUkEntry
+import org.charlesatkinson.libremtd.database.IncomePropertyUkRepository
 import org.charlesatkinson.libremtd.database.Property
+import org.charlesatkinson.libremtd.database.PropertyType
 import org.charlesatkinson.libremtd.ui.components.Dialogs
 import org.charlesatkinson.libremtd.ui.components.PeriodSelector
 import org.charlesatkinson.libremtd.ui.components.PropertySelector
@@ -37,7 +38,7 @@ import org.charlesatkinson.libremtd.ui.components.wrappingLabel
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
 
-class ExpensesPane(
+class IncomePropertyUkPane(
     private val scope: CoroutineScope,
     private val userId: Int,
     private val onStatusChange: (String) -> Unit,
@@ -45,25 +46,25 @@ class ExpensesPane(
 
     val root: VBox
 
-    private val entries    = FXCollections.observableArrayList<ExpenseEntry>()
+    private val entries = FXCollections.observableArrayList<IncomePropertyUkEntry>()
     private val totalLabel = wrappingLabel("£0.00").apply {
-        styleClass.add("expense-total-value-label")
+        styleClass.add("total-value-label")
     }
 
-    private var currentPeriodId: Int?      = null
+    private var currentPeriodId: Int?   = null
     private var currentProperty: Property? = null
 
-    private val propertySelector = PropertySelector(userId) { property ->
+    private val propertySelector = PropertySelector(userId, PropertyType.UK) { property ->
         currentProperty = property
         reloadIfReady()
     }
 
-    private val periodSelector = PeriodSelector(userId = userId) { period ->
+    private val periodSelector = PeriodSelector(userId = userId)  { period ->
         currentPeriodId = period?.id
         reloadIfReady()
     }
 
-    private val categoryPicker = ComboBox<ExpenseCategory>()
+    private val categoryPicker = ComboBox<IncomeCategory>()
     private val amountField    = TextField()
     private val descField      = TextField()
     private val dateField      = TextField()
@@ -76,10 +77,10 @@ class ExpensesPane(
         return VBox(16.0).apply {
             padding = Insets(4.0)
             children.addAll(
-                wrappingLabel("Expenses").apply {
+                wrappingLabel("Income (property, UK)").apply {
                     style = "-fx-font-size: 22px; -fx-font-weight: bold;"
                 },
-                wrappingLabel("Record allowable expenses for the selected property and quarter.").apply {
+                wrappingLabel("Record income received for the selected property and quarter.").apply {
                     styleClass.add("hint-label")
                 },
                 propertySelector.root,
@@ -92,20 +93,20 @@ class ExpensesPane(
     }
 
     private fun reloadIfReady() {
-        val periodId = currentPeriodId
-        val property = currentProperty
+        val periodId   = currentPeriodId
+        val property   = currentProperty
         if (periodId == null || property == null) {
             entries.clear()
             onStatusChange("No period or property selected")
             return
         }
         loadEntries(periodId, property.id)
-        onStatusChange("Loaded expenses for ${property.address}")
+        onStatusChange("Loaded income for ${property.address}")
     }
 
     private fun loadEntries(periodId: Int, propertyId: Int) {
         scope.launch(Dispatchers.IO) {
-            val loaded = ExpenseRepository.currentForPeriodAndProperty(periodId, propertyId)
+            val loaded = IncomePropertyUkRepository.currentForPeriodAndProperty(periodId, propertyId)
             kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
                 entries.setAll(loaded)
                 refreshTotal()
@@ -115,9 +116,9 @@ class ExpensesPane(
 
     private fun buildEntryForm(): VBox {
         categoryPicker.apply {
-            items.setAll(*ExpenseCategory.values())
+            items.setAll(*IncomeCategory.values())
             promptText = "Category"
-            prefWidth  = 300.0
+            prefWidth  = 220.0
             buttonCell = categoryCell()
             setCellFactory { categoryCell() }
         }
@@ -129,7 +130,7 @@ class ExpensesPane(
 
         descField.apply {
             promptText = "Description"
-            prefWidth  = 200.0
+            prefWidth  = 220.0
         }
 
         dateField.apply {
@@ -174,7 +175,7 @@ class ExpensesPane(
 
         if (category == null)            errors += "Please select a category."
         if (amountText.isBlank())        errors += "Please enter an amount."
-        else if (amount == null)         errors += "Amount must be a number (e.g. 250.00)."
+        else if (amount == null)         errors += "Amount must be a number (e.g. 1250.00)."
         else if (amount <= 0)            errors += "Amount must be greater than zero."
         if (desc.isBlank())              errors += "Please enter a description."
         if (dateText.isBlank())          errors += "Please enter a transaction date."
@@ -186,7 +187,7 @@ class ExpensesPane(
         }
 
         scope.launch(Dispatchers.IO) {
-            val entry = ExpenseRepository.record(
+            val entry = IncomePropertyUkRepository.recordPropertyIncome(
                 periodId        = periodId,
                 userId          = userId,
                 propertyId      = property.id,
@@ -199,35 +200,35 @@ class ExpensesPane(
                 entries.add(entry)
                 refreshTotal()
                 clearForm()
-                onStatusChange("Expense entry added ✓")
+                onStatusChange("Income entry added ✓")
             }
         }
     }
 
     private fun buildEntriesTable(): VBox {
-        val table = TableView<ExpenseEntry>(entries).apply {
+        val table = TableView<IncomePropertyUkEntry>(entries).apply {
             prefHeight  = 260.0
-            placeholder = wrappingLabel("No expense entries for this period")
+            placeholder = wrappingLabel("No income entries for this period")
             columns.addAll(
-                TableColumn<ExpenseEntry, String>("Date").apply {
+                TableColumn<IncomePropertyUkEntry, String>("Date").apply {
                     prefWidth = 110.0
                     setCellValueFactory { SimpleStringProperty(it.value.transactionDate) }
                 },
-                TableColumn<ExpenseEntry, String>("Category").apply {
-                    prefWidth = 240.0
+                TableColumn<IncomePropertyUkEntry, String>("Category").apply {
+                    prefWidth = 190.0
                     setCellValueFactory {
                         SimpleStringProperty(
-                            ExpenseCategory.entries
+                            IncomeCategory.entries
                                 .firstOrNull { c -> c.dbKey == it.value.category }?.label
                                 ?: it.value.category
                         )
                     }
                 },
-                TableColumn<ExpenseEntry, String>("Description").apply {
-                    prefWidth = 180.0
+                TableColumn<IncomePropertyUkEntry, String>("Description").apply {
+                    prefWidth = 200.0
                     setCellValueFactory { SimpleStringProperty(it.value.description) }
                 },
-                TableColumn<ExpenseEntry, String>("Amount").apply {
+                TableColumn<IncomePropertyUkEntry, String>("Amount").apply {
                     prefWidth = 100.0
                     style     = "-fx-alignment: CENTER-RIGHT;"
                     setCellValueFactory { SimpleStringProperty("£%.2f".format(it.value.amount)) }
@@ -244,13 +245,13 @@ class ExpensesPane(
                     return@setOnAction
                 }
                 val confirmed = Dialogs.showConfirmation(
-                    message    = "Delete this expense entry?",
+                    message    = "Delete this property income entry?",
                     title      = "Delete entry",
                     headerText = "Are you sure?",
                 )
                 if (!confirmed) return@setOnAction
                 scope.launch(Dispatchers.IO) {
-                    ExpenseRepository.delete(selected.id)
+                    IncomePropertyUkRepository.delete(selected.id)
                     kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
                         entries.remove(selected)
                         refreshTotal()
@@ -276,7 +277,7 @@ class ExpensesPane(
     private fun buildTotalBar(): HBox {
         return HBox(24.0).apply {
             padding   = Insets(12.0, 16.0, 12.0, 16.0)
-            styleClass.add("expense-total-bar")
+            styleClass.add("total-bar")
             style     = "-fx-border-radius: 6; -fx-background-radius: 6;"
             alignment = Pos.CENTER_LEFT
             children.addAll(
@@ -301,8 +302,8 @@ class ExpensesPane(
         return try { LocalDate.parse(text); true } catch (_: DateTimeParseException) { false }
     }
 
-    private fun categoryCell() = object : ListCell<ExpenseCategory>() {
-        override fun updateItem(item: ExpenseCategory?, empty: Boolean) {
+    private fun categoryCell() = object : ListCell<IncomeCategory>() {
+        override fun updateItem(item: IncomeCategory?, empty: Boolean) {
             super.updateItem(item, empty)
             text = if (empty || item == null) null else item.label
         }

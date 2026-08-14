@@ -23,10 +23,12 @@ import javafx.scene.control.*
 import javafx.scene.layout.*
 import org.charlesatkinson.libremtd.database.Property
 import org.charlesatkinson.libremtd.database.PropertyRepository
+import org.charlesatkinson.libremtd.database.PropertyType
 import org.charlesatkinson.libremtd.ui.components.UiPreferences
 
 class PropertySelector(
     private val userId: Int,
+    private val propertyType: PropertyType? = null,
     private val onSelectionChanged: (Property?) -> Unit,
 ) {
     private val prefs = UiPreferences(userId)
@@ -68,6 +70,7 @@ class PropertySelector(
 
     private fun loadProperties() {
         val properties = PropertyRepository.findByUser(userId)
+            .let { all -> if (propertyType != null) all.filter { it.propertyType == propertyType } else all }
         propertyPicker.items.setAll(properties)
 
         when {
@@ -92,7 +95,13 @@ class PropertySelector(
     private fun propertyCell() = object : ListCell<Property>() {
         override fun updateItem(item: Property?, empty: Boolean) {
             super.updateItem(item, empty)
-            text = if (empty || item == null) null else "${item.address}, ${item.postcode}"
+            text = if (empty || item == null) null else {
+                val locationSuffix = when (item.propertyType) {
+                    PropertyType.UK      -> item.postcode
+                    PropertyType.FOREIGN -> item.countryCode
+                }
+                "${item.address}, $locationSuffix"
+            }
         }
     }
 }

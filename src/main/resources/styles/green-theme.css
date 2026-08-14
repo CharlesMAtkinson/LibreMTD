@@ -15,13 +15,6 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-/*
- * green-theme.css
- * Full green colour set for LibreMTD.
- * Replaces dark-theme.css / light-theme.css entirely — not layered on top.
- * Default theme; harmonises with the login screen.
- */
-
 .root {
     -fx-base:                         #e8f5ee;
     -fx-background:                   #f4f9f6;
@@ -97,6 +90,16 @@
 }
 
 /* ── Check boxes and radio buttons ────────────────────────────────────── */
+/* Explicit text-fill rather than relying on the -fx-text-base-color /
+   -fx-text-background-color fallback that CheckBox/RadioButton use by
+   default — that fallback was producing invisible label text next to the
+   controls (confirmed by forcing an inline -fx-text-fill: red override).
+   Matches the same explicit-rule approach already used by
+   .content-card .label and .dialog-pane .label below. */
+.check-box, .radio-button {
+    -fx-text-fill: #1a2e22;
+}
+
 .check-box .box {
     -fx-background-color: #ffffff;
     -fx-border-color: #7aaa88;

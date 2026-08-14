@@ -19,9 +19,13 @@ package org.charlesatkinson.libremtd.database
 
 import mu.KotlinLogging
 import org.charlesatkinson.libremtd.database.tables.AllowanceEntries
-import org.charlesatkinson.libremtd.database.tables.ExpenseEntries
+import org.charlesatkinson.libremtd.database.tables.ExpensePropertyForeignEntries
+import org.charlesatkinson.libremtd.database.tables.ExpensePropertyUkEntries
+import org.charlesatkinson.libremtd.database.tables.ForeignPropertyElections
+import org.charlesatkinson.libremtd.database.tables.ForeignPropertySubmissionElections
 import org.charlesatkinson.libremtd.database.tables.IncomeDividendEntries
-import org.charlesatkinson.libremtd.database.tables.IncomePropertyEntries
+import org.charlesatkinson.libremtd.database.tables.IncomePropertyForeignEntries
+import org.charlesatkinson.libremtd.database.tables.IncomePropertyUkEntries
 import org.charlesatkinson.libremtd.database.tables.IncomeSavingsEntries
 import org.charlesatkinson.libremtd.database.tables.Periods
 import org.charlesatkinson.libremtd.database.tables.Properties
@@ -53,11 +57,15 @@ object Database {
         transaction {
             SchemaUtils.create(
                 AllowanceEntries,
-                ExpenseEntries,
+                ExpensePropertyForeignEntries,
+                ExpensePropertyUkEntries,
+                ForeignPropertyElections,
+                ForeignPropertySubmissionElections,
                 HmrcSettingsTable,
                 IncomeDividendEntries,
                 IncomeDividendForeignEntries,
-                IncomePropertyEntries,
+                IncomePropertyForeignEntries,
+                IncomePropertyUkEntries,
                 IncomeSavingsEntries,
                 Periods,
                 Properties,

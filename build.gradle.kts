@@ -8,7 +8,7 @@ plugins {
 }
 
 group = "org.charlesatkinson"
-version = "0.1.0-SNAPSHOT"
+version = "0.2.0-SNAPSHOT"
 
 repositories {
     mavenCentral()
@@ -99,6 +99,14 @@ tasks.named("run") {
 tasks.processResources {
     val projectVersion = version.toString()
     val buildDate = LocalDate.now().toString()
+
+    // Register these as tracked inputs. Without this, Gradle only watches
+    // the source build.properties file for changes; since its literal
+    // content ("version=${version}") never changes, Gradle marks this task
+    // UP-TO-DATE on every build after the first and skips re-filtering it —
+    // silently leaving a stale version/buildDate in the packaged output.
+    inputs.property("projectVersion", projectVersion)
+    inputs.property("buildDate", buildDate)
 
     filesMatching("build.properties") {
         expand(mapOf(

@@ -45,6 +45,33 @@ class HmrcApiClient(
         .build()
 
     /**
+     * Builds the fraud prevention headers for [context] and adds them to
+     * [builder]. At DEBUG log level, also logs them as ready-to-paste
+     * curl -H flags, so they can be tried directly against HMRC's Test
+     * Fraud Prevention Headers API:
+     * https://developer.service.hmrc.gov.uk/guides/fraud-prevention/test-api/
+     *
+     * Enable via logback.xml, e.g.:
+     *   <logger name="org.charlesatkinson.libremtd.network.HmrcApiClient" level="DEBUG"/>
+     *
+     * Note: that validate endpoint needs an application-restricted bearer
+     * token (client_credentials grant), not the user-restricted token this
+     * class uses for real API calls — get that token separately.
+     */
+    private fun applyFraudPreventionHeaders(builder: HttpRequest.Builder, context: ClientContext) {
+        val headers = fraudHeaders.buildHeaders(context)
+
+        logger.debug {
+            val curlFlags = headers.entries.joinToString(" \\\n  ") { (name, value) ->
+                "-H \"$name: $value\""
+            }
+            "Fraud prevention headers (paste into curl):\n$curlFlags"
+        }
+
+        headers.forEach { (name, value) -> builder.header(name, value) }
+    }
+
+    /**
      * Makes an authenticated GET request to the HMRC API.
      * Automatically refreshes the token if expired.
      * Returns the response body as a String, or null on failure.
@@ -73,9 +100,7 @@ class HmrcApiClient(
         logger.info { "GET request to: $baseUrl$path$query with version $version" }
 
         // Add fraud prevention headers
-        fraudHeaders.buildHeaders(context).forEach { (name, value) ->
-            builder.header(name, value)
-        }
+        applyFraudPreventionHeaders(builder, context)
 
         if (extraHeaders.isNotEmpty()) {
             logger.info { "Extra headers: $extraHeaders" }
@@ -116,9 +141,7 @@ class HmrcApiClient(
             .POST(HttpRequest.BodyPublishers.ofString(body))
         logger.info { "POST request to: $baseUrl$path with version $version" }
 
-        fraudHeaders.buildHeaders(context).forEach { (name, value) ->
-            builder.header(name, value)
-        }
+        applyFraudPreventionHeaders(builder, context)
 
         extraHeaders.forEach { (name, value) ->
             builder.header(name, value)
@@ -142,6 +165,7 @@ class HmrcApiClient(
         body:    String,
         context: ClientContext,
         version: String = "6.0",
+        extraHeaders: Map<String, String> = emptyMap(),
     ): HttpResponse<String>? = withContext(Dispatchers.IO) {
         val token = oauth2Handler.getValidToken(libreMtdUserId) ?: run {
             logger.error { "No valid token available for PUT $path" }
@@ -157,7 +181,9 @@ class HmrcApiClient(
         logger.info { "PUT request to: $baseUrl$path with version $version" }
 
         // Add fraud prevention headers
-        fraudHeaders.buildHeaders(context).forEach { (name, value) ->
+        applyFraudPreventionHeaders(builder, context)
+
+        extraHeaders.forEach { (name, value) ->
             builder.header(name, value)
         }
 

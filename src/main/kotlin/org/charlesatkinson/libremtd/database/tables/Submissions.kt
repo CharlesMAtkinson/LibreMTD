@@ -23,6 +23,7 @@ object Submissions : Table("submissions") {
     val id             = integer("id").autoIncrement()
     val userId         = integer("user_id").references(Users.id)
     val periodId       = integer("period_id").references(Periods.id).nullable()
+    val taxYear        = text("tax_year")
     val submissionType = text("submission_type")
     val submittedAt    = text("submitted_at")
     val hmrcResponse   = text("hmrc_response")

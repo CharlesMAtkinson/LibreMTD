@@ -39,18 +39,19 @@ class SettingsRepository {
                 .singleOrNull()
                 ?.let { row ->
                     HmrcSettings(
-                        userId       = row[HmrcSettingsTable.userId],
-                        clientId     = row[HmrcSettingsTable.clientId],
-                        clientSecret = row[HmrcSettingsTable.clientSecret],
-                        fullName     = row[HmrcSettingsTable.fullName],
-                        dateOfBirth  = row[HmrcSettingsTable.dateOfBirth],
-                        addressLine1 = row[HmrcSettingsTable.addressLine1],
-                        addressLine2 = row[HmrcSettingsTable.addressLine2],
-                        addressLine3 = row[HmrcSettingsTable.addressLine3],
-                        postcode     = row[HmrcSettingsTable.postcode],
-                        nino         = row[HmrcSettingsTable.nino],
-                        utr          = row[HmrcSettingsTable.utr],
-                        businessId   = row[HmrcSettingsTable.businessId],
+                        userId            = row[HmrcSettingsTable.userId],
+                        clientId          = row[HmrcSettingsTable.clientId],
+                        clientSecret      = row[HmrcSettingsTable.clientSecret],
+                        fullName          = row[HmrcSettingsTable.fullName],
+                        dateOfBirth       = row[HmrcSettingsTable.dateOfBirth],
+                        addressLine1      = row[HmrcSettingsTable.addressLine1],
+                        addressLine2      = row[HmrcSettingsTable.addressLine2],
+                        addressLine3      = row[HmrcSettingsTable.addressLine3],
+                        postcode          = row[HmrcSettingsTable.postcode],
+                        nino              = row[HmrcSettingsTable.nino],
+                        utr               = row[HmrcSettingsTable.utr],
+                        businessId        = row[HmrcSettingsTable.businessId],
+                        businessIdForeign = row[HmrcSettingsTable.businessIdForeign],
                     )
                 }
         }
@@ -60,19 +61,20 @@ class SettingsRepository {
         logger.info { "Saving settings for userId=${settings.userId}" }
         transaction {
             HmrcSettingsTable.upsert {
-                it[userId]       = settings.userId
-                it[clientId]     = settings.clientId
-                it[clientSecret] = settings.clientSecret
-                it[fullName]     = settings.fullName
-                it[dateOfBirth]  = settings.dateOfBirth
-                it[addressLine1] = settings.addressLine1
-                it[addressLine2] = settings.addressLine2
-                it[addressLine3] = settings.addressLine3
-                it[postcode]     = settings.postcode
-                it[nino]         = settings.nino
-                it[utr]          = settings.utr
-                it[businessId]   = settings.businessId
-                it[updatedAt]    = LocalDateTime.now().toString()
+                it[userId]            = settings.userId
+                it[clientId]          = settings.clientId
+                it[clientSecret]      = settings.clientSecret
+                it[fullName]          = settings.fullName
+                it[dateOfBirth]       = settings.dateOfBirth
+                it[addressLine1]      = settings.addressLine1
+                it[addressLine2]      = settings.addressLine2
+                it[addressLine3]      = settings.addressLine3
+                it[postcode]          = settings.postcode
+                it[nino]              = settings.nino
+                it[utr]               = settings.utr
+                it[businessId]        = settings.businessId
+                it[businessIdForeign] = settings.businessIdForeign
+                it[updatedAt]         = LocalDateTime.now().toString()
             }
         }
     }

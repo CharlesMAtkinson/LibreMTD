@@ -1,18 +1,20 @@
 /*
- * Copyright (C) 2026 Charles Michael Atkinson
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ *  * Copyright (C) 2026 Charles Michael Atkinson
+ *  *
+ *  * This program is free software: you can redistribute it and/or modify
+ *  * it under the terms of the GNU General Public License as published by
+ *  * the Free Software Foundation, either version 3 of the License, or
+ *  * (at your option) any later version.
+ *  *
+ *  * This program is distributed in the hope that it will be useful,
+ *  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ *  * GNU General Public License for more details.
+ *  *
+ *  * You should have received a copy of the GNU General Public License
+ *  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package org.charlesatkinson.libremtd.ui
@@ -27,9 +29,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.javafx.JavaFx
 import kotlinx.coroutines.launch
-import org.charlesatkinson.libremtd.database.IncomePropertyEntry
-import org.charlesatkinson.libremtd.database.IncomePropertyRepository
+import org.charlesatkinson.libremtd.database.IncomePropertyForeignEntry
+import org.charlesatkinson.libremtd.database.IncomePropertyForeignRepository
 import org.charlesatkinson.libremtd.database.Property
+import org.charlesatkinson.libremtd.database.PropertyType
 import org.charlesatkinson.libremtd.ui.components.Dialogs
 import org.charlesatkinson.libremtd.ui.components.PeriodSelector
 import org.charlesatkinson.libremtd.ui.components.PropertySelector
@@ -37,7 +40,7 @@ import org.charlesatkinson.libremtd.ui.components.wrappingLabel
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
 
-class PropertyIncomePane(
+class IncomePropertyForeignPane(
     private val scope: CoroutineScope,
     private val userId: Int,
     private val onStatusChange: (String) -> Unit,
@@ -45,7 +48,7 @@ class PropertyIncomePane(
 
     val root: VBox
 
-    private val entries = FXCollections.observableArrayList<IncomePropertyEntry>()
+    private val entries = FXCollections.observableArrayList<IncomePropertyForeignEntry>()
     private val totalLabel = wrappingLabel("£0.00").apply {
         styleClass.add("total-value-label")
     }
@@ -53,7 +56,7 @@ class PropertyIncomePane(
     private var currentPeriodId: Int?   = null
     private var currentProperty: Property? = null
 
-    private val propertySelector = PropertySelector(userId) { property ->
+    private val propertySelector = PropertySelector(userId, PropertyType.FOREIGN) { property ->
         currentProperty = property
         reloadIfReady()
     }
@@ -63,7 +66,7 @@ class PropertyIncomePane(
         reloadIfReady()
     }
 
-    private val categoryPicker = ComboBox<IncomeCategory>()
+    private val categoryPicker = ComboBox<ForeignIncomeCategory>()
     private val amountField    = TextField()
     private val descField      = TextField()
     private val dateField      = TextField()
@@ -76,10 +79,10 @@ class PropertyIncomePane(
         return VBox(16.0).apply {
             padding = Insets(4.0)
             children.addAll(
-                wrappingLabel("Income (property)").apply {
+                wrappingLabel("Income (property, foreign)").apply {
                     style = "-fx-font-size: 22px; -fx-font-weight: bold;"
                 },
-                wrappingLabel("Record income received for the selected property and quarter.").apply {
+                wrappingLabel("Record income received for the selected foreign property and quarter.").apply {
                     styleClass.add("hint-label")
                 },
                 propertySelector.root,
@@ -105,7 +108,7 @@ class PropertyIncomePane(
 
     private fun loadEntries(periodId: Int, propertyId: Int) {
         scope.launch(Dispatchers.IO) {
-            val loaded = IncomePropertyRepository.currentForPeriodAndProperty(periodId, propertyId)
+            val loaded = IncomePropertyForeignRepository.currentForPeriodAndProperty(periodId, propertyId)
             kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
                 entries.setAll(loaded)
                 refreshTotal()
@@ -115,7 +118,7 @@ class PropertyIncomePane(
 
     private fun buildEntryForm(): VBox {
         categoryPicker.apply {
-            items.setAll(*IncomeCategory.values())
+            items.setAll(*ForeignIncomeCategory.values())
             promptText = "Category"
             prefWidth  = 220.0
             buttonCell = categoryCell()
@@ -186,7 +189,7 @@ class PropertyIncomePane(
         }
 
         scope.launch(Dispatchers.IO) {
-            val entry = IncomePropertyRepository.recordPropertyIncome(
+            val entry = IncomePropertyForeignRepository.recordForeignPropertyIncome(
                 periodId        = periodId,
                 userId          = userId,
                 propertyId      = property.id,
@@ -205,29 +208,29 @@ class PropertyIncomePane(
     }
 
     private fun buildEntriesTable(): VBox {
-        val table = TableView<IncomePropertyEntry>(entries).apply {
+        val table = TableView<IncomePropertyForeignEntry>(entries).apply {
             prefHeight  = 260.0
             placeholder = wrappingLabel("No income entries for this period")
             columns.addAll(
-                TableColumn<IncomePropertyEntry, String>("Date").apply {
+                TableColumn<IncomePropertyForeignEntry, String>("Date").apply {
                     prefWidth = 110.0
                     setCellValueFactory { SimpleStringProperty(it.value.transactionDate) }
                 },
-                TableColumn<IncomePropertyEntry, String>("Category").apply {
+                TableColumn<IncomePropertyForeignEntry, String>("Category").apply {
                     prefWidth = 190.0
                     setCellValueFactory {
                         SimpleStringProperty(
-                            IncomeCategory.entries
+                            ForeignIncomeCategory.entries
                                 .firstOrNull { c -> c.dbKey == it.value.category }?.label
                                 ?: it.value.category
                         )
                     }
                 },
-                TableColumn<IncomePropertyEntry, String>("Description").apply {
+                TableColumn<IncomePropertyForeignEntry, String>("Description").apply {
                     prefWidth = 200.0
                     setCellValueFactory { SimpleStringProperty(it.value.description) }
                 },
-                TableColumn<IncomePropertyEntry, String>("Amount").apply {
+                TableColumn<IncomePropertyForeignEntry, String>("Amount").apply {
                     prefWidth = 100.0
                     style     = "-fx-alignment: CENTER-RIGHT;"
                     setCellValueFactory { SimpleStringProperty("£%.2f".format(it.value.amount)) }
@@ -250,7 +253,7 @@ class PropertyIncomePane(
                 )
                 if (!confirmed) return@setOnAction
                 scope.launch(Dispatchers.IO) {
-                    IncomePropertyRepository.delete(selected.id)
+                    IncomePropertyForeignRepository.delete(selected.id)
                     kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
                         entries.remove(selected)
                         refreshTotal()
@@ -301,8 +304,8 @@ class PropertyIncomePane(
         return try { LocalDate.parse(text); true } catch (_: DateTimeParseException) { false }
     }
 
-    private fun categoryCell() = object : ListCell<IncomeCategory>() {
-        override fun updateItem(item: IncomeCategory?, empty: Boolean) {
+    private fun categoryCell() = object : ListCell<ForeignIncomeCategory>() {
+        override fun updateItem(item: ForeignIncomeCategory?, empty: Boolean) {
             super.updateItem(item, empty)
             text = if (empty || item == null) null else item.label
         }

@@ -26,15 +26,8 @@ import mu.KotlinLogging
 
 private val logger = KotlinLogging.logger {}
 
-// Opt-in added 22 May 2026 to suppress compiler warning from explicitNulls = false:
-// "This declaration needs opt-in. Its usage should be marked with
-// '@kotlinx.serialization.ExperimentalSerializationApi' or
-// '@OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)'"
-// when using Kotlin 2.0.21 and org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.2
 @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 private val json = Json { ignoreUnknownKeys = true; prettyPrint = false; explicitNulls = false }
-
-// ── Request model ─────────────────────────────────────────────────────────────
 
 @Serializable
 data class UkPropertyCumulativeRequest(
@@ -71,37 +64,14 @@ data class UkPropertyExpensesBody(
     val residentialFinancialCostsCarriedForward: Double? = null,
 )
 
-// ── Response model ────────────────────────────────────────────────────────────
-
 data class SubmissionResult(
     val success:    Boolean,
     val statusCode: Int,
     val message:    String,
 )
 
-// ── Client ────────────────────────────────────────────────────────────────────
+class PropertyUkSubmissionClient(private val apiClient: HmrcApiClient) {
 
-class PropertySubmissionClient(private val apiClient: HmrcApiClient) {
-
-    /**
-     * Submits a cumulative UK property period summary for 2025-26 onwards.
-     * Uses PUT — idempotent, replaces any previous submission for the tax year.
-     *
-     * [fromDate] is always the tax year start, e.g. "2025-04-06".
-     * [toDate]   is the end of the latest quarter being reported, e.g. "2025-07-05".
-     *
-     * When [income] and [expenses] are both null the body still contains valid
-     * dates and an empty ukProperty object, which is sufficient for HMRC to
-     * mark the obligation as Fulfilled.
-     *
-     * @param nino       User's National Insurance number
-     * @param businessId HMRC business ID for the UK property business
-     * @param taxYear    Format "2025-26"
-     * @param fromDate   Tax year start date, format "YYYY-MM-DD"
-     * @param toDate     Quarter end date, format "YYYY-MM-DD"
-     * @param income     Year-to-date income figures, or null if none
-     * @param expenses   Year-to-date expense figures, or null if none
-     */
     suspend fun submitCumulative(
         nino:       String,
         businessId: String,
@@ -153,3 +123,4 @@ class PropertySubmissionClient(private val apiClient: HmrcApiClient) {
         }
     }
 }
+

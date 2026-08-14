@@ -19,9 +19,11 @@ package org.charlesatkinson.libremtd.ui.components
 
 import javafx.scene.control.ContextMenu
 import javafx.scene.control.Label
+import javafx.scene.control.Labeled
 import javafx.scene.control.MenuItem
 import javafx.scene.input.Clipboard
 import javafx.scene.input.ClipboardContent
+import javafx.scene.layout.Region
 import javafx.scene.layout.VBox
 import javafx.stage.Popup
 
@@ -45,6 +47,12 @@ fun hintLabel(text: String): Label = wrappingLabel(text).apply {
     styleClass.add("hint-label")
     maxWidth = Double.MAX_VALUE
     minWidth = 0.0
+    // Without this, a VBox parent can size the label down to the single-line
+    // height it defaults to at construction time, clipping any wrapped
+    // second (or later) line even though maxWidth/minWidth above are letting
+    // it wrap correctly. USE_PREF_SIZE tells the layout to never shrink
+    // below the label's own computed (post-wrap) preferred height.
+    minHeight = Region.USE_PREF_SIZE
 }
 
 /**
@@ -86,20 +94,33 @@ fun infoPopup(text: String): Label {
     return icon
 }
 
-private fun makeCopyableLabel(initialText: String): Label {
-    val label = Label(initialText)
+/**
+ * Attaches the standard "right-click > Copy" context menu to any Labeled
+ * node (Label, TableCell, etc.), copying whatever that node's text is at
+ * the moment Copy is clicked — not a fixed value captured up front, so it
+ * works correctly on TableCells whose text changes as rows are recycled.
+ * makeCopyableLabel() uses this internally; call it directly for nodes
+ * that aren't a fresh Label, so the context-menu behaviour still lives in
+ * exactly one place.
+ */
+fun attachCopyContextMenu(target: Labeled) {
     val copyItem = MenuItem("Copy").apply {
         style = "-fx-font-size: 13px; -fx-font-weight: normal;"
         setOnAction {
             val clipboard = Clipboard.getSystemClipboard()
             val content   = ClipboardContent()
-            content.putString(label.text)
+            content.putString(target.text)
             clipboard.setContent(content)
         }
     }
     val contextMenu = ContextMenu(copyItem)
-    label.setOnContextMenuRequested { event ->
-        contextMenu.show(label, event.screenX, event.screenY)
+    target.setOnContextMenuRequested { event ->
+        contextMenu.show(target, event.screenX, event.screenY)
     }
+}
+
+private fun makeCopyableLabel(initialText: String): Label {
+    val label = Label(initialText)
+    attachCopyContextMenu(label)
     return label
 }

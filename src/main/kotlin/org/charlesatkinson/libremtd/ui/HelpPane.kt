@@ -153,12 +153,14 @@ class HelpPane(
                     )
                 )
                 Topic.PropertyIncome -> buildPlaceholderPane("Income (property)",
-                    "Record rental income for each property and period. " +
+                    "Record rental income for each property and period.  " +
                             "Furnished holiday lettings and standard residential lettings are both supported.")
                 Topic.SavingsIncome  -> buildPlaceholderPane("Income (savings)",
                     "Record interest from bank accounts, building societies, and other savings sources.")
                 Topic.Expenses      -> buildPlaceholderPane("Expenses",
-                    "Record allowable property expenses such as repairs, insurance, and agent fees.")
+                    "Record allowable property expenses such as repairs, insurance, and agent fees.  " +
+                            "The consolidated expenses scheme is not supported so all expenses are assigned " +
+                            "to a category.")
                 Topic.Allowances    -> buildPlaceholderPane("Allowances",
                     "Claim the Property Income Allowance (up to £1,000) instead of actual expenses, " +
                             "or record other allowances applicable to your situation.")
@@ -187,6 +189,11 @@ class HelpPane(
 
         left   = topicList
         center = contentArea
+
+        // Fill the height the outer ScrollPane viewport offers.
+        minHeight = 0.0
+        maxHeight = Double.MAX_VALUE
+        VBox.setVgrow(this, javafx.scene.layout.Priority.ALWAYS)
 
         // Resolve initial topic: prefer constructor arg, else last saved, else Introduction
         val startTopic = initialTopic.takeIf { it != Topic.Introduction }
@@ -225,8 +232,8 @@ class HelpPane(
                 subheading("What LibreMTD supports"),
                 body("Property income — record rental income and allowable expenses for " +
                         "furnished and unfurnished UK residential lettings, including furnished " +
-                        "holiday lettings." +
-                        "Not including the property income allowance and rent-a-room schemes."
+                        "holiday lettings.  " +
+                        "The property income allowance and rent-a-room schemes are not supported."
                 ),
                 body("Dividend income — record dividends received from UK and overseas companies."),
                 body("Savings income — record interest from UK bank and building society accounts."),

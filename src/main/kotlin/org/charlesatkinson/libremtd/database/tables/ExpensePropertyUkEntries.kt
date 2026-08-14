@@ -19,7 +19,7 @@ package org.charlesatkinson.libremtd.database.tables
 
 import org.jetbrains.exposed.sql.Table
 
-object IncomePropertyEntries : Table("income_property_entries") {
+object ExpensePropertyUkEntries : Table("expense_property_uk_entries") {
     val id              = integer("id").autoIncrement()
     val periodId        = integer("period_id").references(Periods.id)
     val userId          = integer("user_id").references(Users.id)

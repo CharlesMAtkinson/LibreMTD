@@ -20,19 +20,20 @@ package org.charlesatkinson.libremtd.database.tables
 import org.jetbrains.exposed.sql.Table
 
 object HmrcSettings : Table("hmrc_settings") {
-    val userId       = integer("user_id")
-    val clientId     = text("client_id").default("")
-    val clientSecret = text("client_secret").default("")
-    val nino         = text("nino").default("")
-    val utr          = text("utr").default("")
-    val businessId   = text("business_id").default("")
-    val fullName     = text("full_name").default("")
-    val dateOfBirth  = text("date_of_birth").default("")
-    val addressLine1 = text("address_line1").default("")
-    val addressLine2 = text("address_line2").default("")
-    val addressLine3 = text("address_line3").default("")
-    val postcode     = text("postcode").default("")
-    val updatedAt    = text("updated_at").default("")
+    val userId            = integer("user_id")
+    val clientId          = text("client_id").default("")
+    val clientSecret      = text("client_secret").default("")
+    val nino              = text("nino").default("")
+    val utr               = text("utr").default("")
+    val businessId        = text("business_id").default("")
+    val businessIdForeign = text("business_id_foreign").default("")
+    val fullName          = text("full_name").default("")
+    val dateOfBirth       = text("date_of_birth").default("")
+    val addressLine1      = text("address_line1").default("")
+    val addressLine2      = text("address_line2").default("")
+    val addressLine3      = text("address_line3").default("")
+    val postcode          = text("postcode").default("")
+    val updatedAt         = text("updated_at").default("")
 
     override val primaryKey = PrimaryKey(userId)
 }

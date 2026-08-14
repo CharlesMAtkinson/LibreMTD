@@ -279,7 +279,7 @@ object SpreadsheetImporter {
         val properties = PropertyRepository.findByUser(userId)
         return buildMap {
             for (p in properties) {
-                put(propertyDisplayString(p.address, p.postcode), p.id)
+                put(propertyDisplayString(p.address, p.postcode, p.countryCode), p.id)
                 put(p.id.toString(), p.id)
             }
         }
@@ -573,13 +573,13 @@ object SpreadsheetImporter {
         val liveIds: Set<Int> = transaction {
             when (table) {
                 ExportTable.EXPENSES ->
-                    ExpenseEntries
-                        .select(ExpenseEntries.id)
+                    ExpensePropertyUkEntries
+                        .select(ExpensePropertyUkEntries.id)
                         .where {
-                            (ExpenseEntries.userId eq userId) and
-                                    ExpenseEntries.supersededAt.isNull()
+                            (ExpensePropertyUkEntries.userId eq userId) and
+                                    ExpensePropertyUkEntries.supersededAt.isNull()
                         }
-                        .map { it[ExpenseEntries.id] }.toSet()
+                        .map { it[ExpensePropertyUkEntries.id] }.toSet()
 
                 ExportTable.INCOME_DIVIDENDS ->
                     IncomeDividendEntries
@@ -591,13 +591,13 @@ object SpreadsheetImporter {
                         .map { it[IncomeDividendEntries.id] }.toSet()
 
                 ExportTable.INCOME_PROPERTY ->
-                    IncomePropertyEntries
-                        .select(IncomePropertyEntries.id)
+                    IncomePropertyUkEntries
+                        .select(IncomePropertyUkEntries.id)
                         .where {
-                            (IncomePropertyEntries.userId eq userId) and
-                                    IncomePropertyEntries.supersededAt.isNull()
+                            (IncomePropertyUkEntries.userId eq userId) and
+                                    IncomePropertyUkEntries.supersededAt.isNull()
                         }
-                        .map { it[IncomePropertyEntries.id] }.toSet()
+                        .map { it[IncomePropertyUkEntries.id] }.toSet()
 
                 ExportTable.INCOME_SAVINGS ->
                     IncomeSavingsEntries
@@ -639,17 +639,17 @@ object SpreadsheetImporter {
                 val existingId: Int? = when (table) {
 
                     ExportTable.EXPENSES ->
-                        ExpenseEntries
-                            .select(ExpenseEntries.id)
+                        ExpensePropertyUkEntries
+                            .select(ExpensePropertyUkEntries.id)
                             .where {
-                                (ExpenseEntries.userId          eq userId)              and
-                                        (ExpenseEntries.category        eq row.category)        and
-                                        (ExpenseEntries.amount          eq row.amount)          and
-                                        (ExpenseEntries.description     eq row.description)     and
-                                        (ExpenseEntries.transactionDate eq row.transactionDate) and
-                                        ExpenseEntries.supersededAt.isNull()
+                                (ExpensePropertyUkEntries.userId          eq userId)              and
+                                        (ExpensePropertyUkEntries.category        eq row.category)        and
+                                        (ExpensePropertyUkEntries.amount          eq row.amount)          and
+                                        (ExpensePropertyUkEntries.description     eq row.description)     and
+                                        (ExpensePropertyUkEntries.transactionDate eq row.transactionDate) and
+                                        ExpensePropertyUkEntries.supersededAt.isNull()
                             }
-                            .firstOrNull()?.get(ExpenseEntries.id)
+                            .firstOrNull()?.get(ExpensePropertyUkEntries.id)
 
                     ExportTable.INCOME_DIVIDENDS ->
                         IncomeDividendEntries
@@ -665,18 +665,18 @@ object SpreadsheetImporter {
                             .firstOrNull()?.get(IncomeDividendEntries.id)
 
                     ExportTable.INCOME_PROPERTY ->
-                        IncomePropertyEntries
-                            .select(IncomePropertyEntries.id)
+                        IncomePropertyUkEntries
+                            .select(IncomePropertyUkEntries.id)
                             .where {
-                                (IncomePropertyEntries.userId          eq userId)              and
-                                        (IncomePropertyEntries.propertyId      eq row.propertyId!!)    and
-                                        (IncomePropertyEntries.category        eq row.category)        and
-                                        (IncomePropertyEntries.amount          eq row.amount)          and
-                                        (IncomePropertyEntries.description     eq row.description)     and
-                                        (IncomePropertyEntries.transactionDate eq row.transactionDate) and
-                                        IncomePropertyEntries.supersededAt.isNull()
+                                (IncomePropertyUkEntries.userId          eq userId)              and
+                                        (IncomePropertyUkEntries.propertyId      eq row.propertyId!!)    and
+                                        (IncomePropertyUkEntries.category        eq row.category)        and
+                                        (IncomePropertyUkEntries.amount          eq row.amount)          and
+                                        (IncomePropertyUkEntries.description     eq row.description)     and
+                                        (IncomePropertyUkEntries.transactionDate eq row.transactionDate) and
+                                        IncomePropertyUkEntries.supersededAt.isNull()
                             }
-                            .firstOrNull()?.get(IncomePropertyEntries.id)
+                            .firstOrNull()?.get(IncomePropertyUkEntries.id)
 
                     ExportTable.INCOME_SAVINGS ->
                         IncomeSavingsEntries
@@ -788,11 +788,11 @@ object SpreadsheetImporter {
 
     private fun hasChanged(table: ExportTable, row: ParsedRow): Boolean = when (table) {
         ExportTable.EXPENSES ->
-            ExpenseEntries.selectAll().where { ExpenseEntries.id eq row.id!! }.single().let { db ->
-                db[ExpenseEntries.category]        != row.category        ||
-                        db[ExpenseEntries.amount]          != row.amount          ||
-                        db[ExpenseEntries.description]     != row.description     ||
-                        db[ExpenseEntries.transactionDate] != row.transactionDate
+            ExpensePropertyUkEntries.selectAll().where { ExpensePropertyUkEntries.id eq row.id!! }.single().let { db ->
+                db[ExpensePropertyUkEntries.category]        != row.category        ||
+                        db[ExpensePropertyUkEntries.amount]          != row.amount          ||
+                        db[ExpensePropertyUkEntries.description]     != row.description     ||
+                        db[ExpensePropertyUkEntries.transactionDate] != row.transactionDate
             }
 
         ExportTable.INCOME_DIVIDENDS ->
@@ -804,12 +804,12 @@ object SpreadsheetImporter {
             }
 
         ExportTable.INCOME_PROPERTY ->
-            IncomePropertyEntries.selectAll().where { IncomePropertyEntries.id eq row.id!! }.single().let { db ->
-                db[IncomePropertyEntries.propertyId]      != row.propertyId      ||
-                        db[IncomePropertyEntries.category]        != row.category        ||
-                        db[IncomePropertyEntries.amount]          != row.amount          ||
-                        db[IncomePropertyEntries.description]     != row.description     ||
-                        db[IncomePropertyEntries.transactionDate] != row.transactionDate
+            IncomePropertyUkEntries.selectAll().where { IncomePropertyUkEntries.id eq row.id!! }.single().let { db ->
+                db[IncomePropertyUkEntries.propertyId]      != row.propertyId      ||
+                        db[IncomePropertyUkEntries.category]        != row.category        ||
+                        db[IncomePropertyUkEntries.amount]          != row.amount          ||
+                        db[IncomePropertyUkEntries.description]     != row.description     ||
+                        db[IncomePropertyUkEntries.transactionDate] != row.transactionDate
             }
 
         ExportTable.INCOME_SAVINGS ->
@@ -824,11 +824,11 @@ object SpreadsheetImporter {
     private fun supersedeRow(table: ExportTable, id: Int, now: String) {
         when (table) {
             ExportTable.EXPENSES ->
-                ExpenseEntries.update({ ExpenseEntries.id eq id }) { it[supersededAt] = now }
+                ExpensePropertyUkEntries.update({ ExpensePropertyUkEntries.id eq id }) { it[supersededAt] = now }
             ExportTable.INCOME_DIVIDENDS ->
                 IncomeDividendEntries.update({ IncomeDividendEntries.id eq id }) { it[supersededAt] = now }
             ExportTable.INCOME_PROPERTY ->
-                IncomePropertyEntries.update({ IncomePropertyEntries.id eq id }) { it[supersededAt] = now }
+                IncomePropertyUkEntries.update({ IncomePropertyUkEntries.id eq id }) { it[supersededAt] = now }
             ExportTable.INCOME_SAVINGS ->
                 IncomeSavingsEntries.update({ IncomeSavingsEntries.id eq id }) { it[supersededAt] = now }
         }
@@ -849,15 +849,15 @@ object SpreadsheetImporter {
     ) {
         when (table) {
             ExportTable.EXPENSES ->
-                ExpenseEntries.insert {
-                    it[ExpenseEntries.userId]          = userId
-                    it[ExpenseEntries.periodId]        = periodId!!
-                    it[ExpenseEntries.category]        = row.category
-                    it[ExpenseEntries.amount]          = row.amount
-                    it[ExpenseEntries.description]     = row.description
-                    it[ExpenseEntries.transactionDate] = row.transactionDate
-                    it[ExpenseEntries.recordedAt]      = now
-                    it[ExpenseEntries.supersededAt]    = null
+                ExpensePropertyUkEntries.insert {
+                    it[ExpensePropertyUkEntries.userId]          = userId
+                    it[ExpensePropertyUkEntries.periodId]        = periodId!!
+                    it[ExpensePropertyUkEntries.category]        = row.category
+                    it[ExpensePropertyUkEntries.amount]          = row.amount
+                    it[ExpensePropertyUkEntries.description]     = row.description
+                    it[ExpensePropertyUkEntries.transactionDate] = row.transactionDate
+                    it[ExpensePropertyUkEntries.recordedAt]      = now
+                    it[ExpensePropertyUkEntries.supersededAt]    = null
                 }
             ExportTable.INCOME_DIVIDENDS ->
                 IncomeDividendEntries.insert {
@@ -871,16 +871,16 @@ object SpreadsheetImporter {
                     it[IncomeDividendEntries.supersededAt]    = null
                 }
             ExportTable.INCOME_PROPERTY ->
-                IncomePropertyEntries.insert {
-                    it[IncomePropertyEntries.userId]          = userId
-                    it[IncomePropertyEntries.periodId]        = periodId!!
-                    it[IncomePropertyEntries.propertyId]      = row.propertyId!!
-                    it[IncomePropertyEntries.category]        = row.category
-                    it[IncomePropertyEntries.amount]          = row.amount
-                    it[IncomePropertyEntries.description]     = row.description
-                    it[IncomePropertyEntries.transactionDate] = row.transactionDate
-                    it[IncomePropertyEntries.recordedAt]      = now
-                    it[IncomePropertyEntries.supersededAt]    = null
+                IncomePropertyUkEntries.insert {
+                    it[IncomePropertyUkEntries.userId]          = userId
+                    it[IncomePropertyUkEntries.periodId]        = periodId!!
+                    it[IncomePropertyUkEntries.propertyId]      = row.propertyId!!
+                    it[IncomePropertyUkEntries.category]        = row.category
+                    it[IncomePropertyUkEntries.amount]          = row.amount
+                    it[IncomePropertyUkEntries.description]     = row.description
+                    it[IncomePropertyUkEntries.transactionDate] = row.transactionDate
+                    it[IncomePropertyUkEntries.recordedAt]      = now
+                    it[IncomePropertyUkEntries.supersededAt]    = null
                 }
             ExportTable.INCOME_SAVINGS ->
                 IncomeSavingsEntries.insert {

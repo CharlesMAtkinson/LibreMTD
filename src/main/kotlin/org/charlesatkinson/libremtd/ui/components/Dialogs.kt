@@ -19,11 +19,13 @@ package org.charlesatkinson.libremtd.ui.components
 
 import javafx.scene.control.Alert
 import javafx.scene.control.ButtonType
+import javafx.scene.control.Dialog
 import javafx.scene.image.Image
 import javafx.scene.layout.Region
 import javafx.stage.Stage
 
 import mu.KotlinLogging
+
 private val logger = KotlinLogging.logger {}
 
 /**
@@ -46,7 +48,16 @@ object Dialogs {
         }
     }
 
-    private fun Alert.applyAppIcons() {
+    /**
+     * Applies LibreMTD's window icon to any Dialog (including Alert, since
+     * Alert is itself a Dialog<ButtonType>) via setOnShowing — deferred
+     * until the dialog is actually about to show, since a Dialog's Stage
+     * isn't guaranteed to exist yet immediately after construction. Panes
+     * building their own Dialogs (e.g. PropertiesPane's registration and
+     * FTCR dialogs) should call this instead of loading icons themselves,
+     * so the icon list and loading mechanism stay in one place.
+     */
+    fun Dialog<*>.applyAppIcons() {
         setOnShowing {
             val window = dialogPane.scene?.window
             val stage  = window as? Stage

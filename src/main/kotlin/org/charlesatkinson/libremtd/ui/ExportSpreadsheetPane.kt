@@ -174,7 +174,7 @@ class ExportSpreadsheetPane(
         propertyDisplayList = PropertyRepository.findByUser(userId).map { p ->
             PropertyDisplay(
                 id      = p.id,
-                display = propertyDisplayString(p.address, p.postcode),
+                display = propertyDisplayString(p.address, p.postcode, p.countryCode),
             )
         }
 

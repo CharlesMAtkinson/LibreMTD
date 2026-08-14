@@ -22,9 +22,9 @@ import org.apache.poi.ss.util.CellRangeAddressList
 import org.apache.poi.xssf.usermodel.XSSFCellStyle
 import org.apache.poi.xssf.usermodel.XSSFSheet
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
-import org.charlesatkinson.libremtd.database.tables.ExpenseEntries
+import org.charlesatkinson.libremtd.database.tables.ExpensePropertyUkEntries
 import org.charlesatkinson.libremtd.database.tables.IncomeDividendEntries
-import org.charlesatkinson.libremtd.database.tables.IncomePropertyEntries
+import org.charlesatkinson.libremtd.database.tables.IncomePropertyUkEntries
 import org.charlesatkinson.libremtd.database.tables.IncomeSavingsEntries
 import org.charlesatkinson.libremtd.database.taxYearDateRange
 import org.charlesatkinson.libremtd.ui.DividendCategory
@@ -78,14 +78,25 @@ data class PropertyDisplay(
 )
 
 /**
- * Converts a raw address and postcode into a single-line display string
+ * Converts property identifying details into a single-line display string
  * safe for use in a spreadsheet dropdown.
+ *
+ * UK properties (postcode present) show their postcode. Foreign properties
+ * (postcode == null) show their ISO 3166-1 Alpha-3 country code in
+ * parentheses instead, if one is available.
  *
  * Commas in the address are replaced with en-dashes so LibreOffice does not
  * wrap the dropdown entry at comma boundaries.
  */
-fun propertyDisplayString(address: String, postcode: String): String =
-    "${address.replace(",", " \u2013")} $postcode"
+fun propertyDisplayString(address: String, postcode: String?, countryCode: String? = null): String {
+    val cleanAddress = address.replace(",", " \u2013")
+    val suffix = when {
+        !postcode.isNullOrBlank()    -> postcode
+        !countryCode.isNullOrBlank() -> "($countryCode)"
+        else                          -> null
+    }
+    return if (suffix != null) "$cleanAddress $suffix" else cleanAddress
+}
 
 // ---------------------------------------------------------------------------
 // Column definitions
@@ -182,25 +193,25 @@ fun fetchRows(
     when (table) {
 
         ExportTable.EXPENSES -> {
-            var query = ExpenseEntries
+            var query = ExpensePropertyUkEntries
                 .selectAll()
                 .where {
-                    (ExpenseEntries.userId eq userId) and
-                            ExpenseEntries.supersededAt.isNull() and
-                            (ExpenseEntries.transactionDate greaterEq startDate) and
-                            (ExpenseEntries.transactionDate lessEq endDate)
+                    (ExpensePropertyUkEntries.userId eq userId) and
+                            ExpensePropertyUkEntries.supersededAt.isNull() and
+                            (ExpensePropertyUkEntries.transactionDate greaterEq startDate) and
+                            (ExpensePropertyUkEntries.transactionDate lessEq endDate)
                 }
             if (filterPropertyId != null)
-                query = query.andWhere { ExpenseEntries.propertyId eq filterPropertyId }
+                query = query.andWhere { ExpensePropertyUkEntries.propertyId eq filterPropertyId }
             query
-                .orderBy(ExpenseEntries.transactionDate)
+                .orderBy(ExpensePropertyUkEntries.transactionDate)
                 .map { row ->
                     mapOf(
-                        "id"               to row[ExpenseEntries.id],
-                        "category"         to dbKeyToLabel(ExportTable.EXPENSES, row[ExpenseEntries.category]),
-                        "amount"           to row[ExpenseEntries.amount],
-                        "description"      to row[ExpenseEntries.description],
-                        "transaction_date" to row[ExpenseEntries.transactionDate],
+                        "id"               to row[ExpensePropertyUkEntries.id],
+                        "category"         to dbKeyToLabel(ExportTable.EXPENSES, row[ExpensePropertyUkEntries.category]),
+                        "amount"           to row[ExpensePropertyUkEntries.amount],
+                        "description"      to row[ExpensePropertyUkEntries.description],
+                        "transaction_date" to row[ExpensePropertyUkEntries.transactionDate],
                     )
                 }
         }
@@ -226,28 +237,28 @@ fun fetchRows(
         }
 
         ExportTable.INCOME_PROPERTY -> {
-            var query = IncomePropertyEntries
+            var query = IncomePropertyUkEntries
                 .selectAll()
                 .where {
-                    (IncomePropertyEntries.userId eq userId) and
-                            IncomePropertyEntries.supersededAt.isNull() and
-                            (IncomePropertyEntries.transactionDate greaterEq startDate) and
-                            (IncomePropertyEntries.transactionDate lessEq endDate)
+                    (IncomePropertyUkEntries.userId eq userId) and
+                            IncomePropertyUkEntries.supersededAt.isNull() and
+                            (IncomePropertyUkEntries.transactionDate greaterEq startDate) and
+                            (IncomePropertyUkEntries.transactionDate lessEq endDate)
                 }
             if (filterPropertyId != null)
-                query = query.andWhere { IncomePropertyEntries.propertyId eq filterPropertyId }
+                query = query.andWhere { IncomePropertyUkEntries.propertyId eq filterPropertyId }
             query
-                .orderBy(IncomePropertyEntries.transactionDate)
+                .orderBy(IncomePropertyUkEntries.transactionDate)
                 .map { row ->
-                    val pid = row[IncomePropertyEntries.propertyId]
+                    val pid = row[IncomePropertyUkEntries.propertyId]
                     mapOf(
-                        "id"               to row[IncomePropertyEntries.id],
+                        "id"               to row[IncomePropertyUkEntries.id],
                         "property_id"      to pid,
                         "property"         to (propertyDisplayMap[pid] ?: ""),
-                        "category"         to dbKeyToLabel(ExportTable.INCOME_PROPERTY, row[IncomePropertyEntries.category]),
-                        "amount"           to row[IncomePropertyEntries.amount],
-                        "description"      to row[IncomePropertyEntries.description],
-                        "transaction_date" to row[IncomePropertyEntries.transactionDate],
+                        "category"         to dbKeyToLabel(ExportTable.INCOME_PROPERTY, row[IncomePropertyUkEntries.category]),
+                        "amount"           to row[IncomePropertyUkEntries.amount],
+                        "description"      to row[IncomePropertyUkEntries.description],
+                        "transaction_date" to row[IncomePropertyUkEntries.transactionDate],
                     )
                 }
         }

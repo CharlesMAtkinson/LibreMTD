@@ -18,16 +18,17 @@
 package org.charlesatkinson.libremtd.database
 
 data class HmrcSettings(
-    val userId:      Int,
-    val clientId:    String,
+    val userId: Int,
+    val clientId: String,
     val clientSecret: String,
-    val nino:        String,
-    val utr:         String,
-    val businessId:  String,
-    val fullName:    String,
+    val nino: String,
+    val utr: String,
+    val businessId: String,
+    val fullName: String,
     val dateOfBirth: String,
     val addressLine1: String,
     val addressLine2: String,
     val addressLine3: String,
-    val postcode:    String,
+    val postcode: String,
+    val businessIdForeign: String,
 )

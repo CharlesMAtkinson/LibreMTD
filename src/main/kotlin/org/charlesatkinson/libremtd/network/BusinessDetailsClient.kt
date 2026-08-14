@@ -113,4 +113,59 @@ class BusinessDetailsClient(private val apiClient: HmrcApiClient) {
             ApiResult.Failure(msg, e)
         }
     }
+
+    suspend fun fetchForeignPropertyBusinessId(
+        nino:    String,
+        context: ClientContext,
+        testScenario: String? = null,
+    ): ApiResult<String> {
+        val extraHeaders = if (testScenario != null)
+            mapOf("Gov-Test-Scenario" to testScenario)
+        else
+            emptyMap()
+
+        val response = apiClient.get(
+            path         = "/individuals/business/details/$nino/list",
+            context      = context,
+            version      = "2.0",
+            extraHeaders = extraHeaders,
+        )
+
+        if (response == null) {
+            val msg = "Network error — could not reach HMRC. Check your internet connection."
+            logger.error { msg }
+            return ApiResult.Failure(msg)
+        }
+
+        if (response.statusCode() != 200) {
+            val msg = buildString {
+                append("HMRC returned HTTP ${response.statusCode()} fetching business details")
+                val body = response.body().trim()
+                if (body.isNotEmpty()) append(":\n$body")
+            }
+            logger.error { "Business details fetch failed: ${response.statusCode()} — ${response.body()}" }
+            return ApiResult.Failure(msg)
+        }
+
+        return try {
+            val parsed = json.decodeFromString<BusinessDetailsResponse>(response.body())
+            val businessId = parsed.listOfBusinesses
+                .firstOrNull { it.typeOfBusiness == "foreign-property" }
+                ?.businessId
+
+            if (businessId != null) {
+                logger.info { "Found foreign property businessId: $businessId" }
+                ApiResult.Success(businessId)
+            } else {
+                val msg = "No foreign property business found for NINO $nino. " +
+                        "Check that you have a foreign property business registered with HMRC."
+                logger.error { msg }
+                ApiResult.Failure(msg)
+            }
+        } catch (e: Exception) {
+            val msg = "Failed to parse business details response: ${e.message}"
+            logger.error(e) { msg }
+            ApiResult.Failure(msg, e)
+        }
+    }
 }

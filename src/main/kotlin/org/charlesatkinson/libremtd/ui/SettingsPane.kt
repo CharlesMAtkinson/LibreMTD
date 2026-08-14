@@ -63,6 +63,12 @@ class SettingsPane(
         isEditable = false
         styleClass.add("readonly-field")
     }
+    private val businessIdForeignField = TextField().apply {
+        promptText = "Fetched automatically from HMRC"
+        prefWidth  = 260.0
+        isEditable = false
+        styleClass.add("readonly-field")
+    }
     private val fullNameField     = TextField()
     private val dateOfBirthField  = TextField()
     private val addressLine1Field = TextField()
@@ -79,7 +85,7 @@ class SettingsPane(
     }
 
     private data class SettingsSnapshot(
-        val nino: String, val utr: String, val businessId: String,
+        val nino: String, val utr: String, val businessId: String, val businessIdForeign: String,
         val fullName: String, val dob: String,
         val line1: String, val line2: String, val line3: String, val postcode: String,
         val clientId: String, val clientSecret: String,
@@ -93,20 +99,21 @@ class SettingsPane(
         loadSettings()
     }
 
-    private fun emptySnapshot() = SettingsSnapshot("","","","","","","","","","","")
+    private fun emptySnapshot() = SettingsSnapshot("","","","","","","","","","","","")
 
     private fun currentSnapshot() = SettingsSnapshot(
-        nino         = ninoField.text.trim(),
-        utr          = utrField.text.trim(),
-        businessId   = businessIdField.text.trim(),
-        fullName     = fullNameField.text.trim(),
-        dob          = dateOfBirthField.text.trim(),
-        line1        = addressLine1Field.text.trim(),
-        line2        = addressLine2Field.text.trim(),
-        line3        = addressLine3Field.text.trim(),
-        postcode     = postcodeField.text.trim(),
-        clientId     = clientIdField.text.trim(),
-        clientSecret = clientSecretField.text.trim(),
+        nino              = ninoField.text.trim(),
+        utr               = utrField.text.trim(),
+        businessId        = businessIdField.text.trim(),
+        businessIdForeign = businessIdForeignField.text.trim(),
+        fullName          = fullNameField.text.trim(),
+        dob               = dateOfBirthField.text.trim(),
+        line1             = addressLine1Field.text.trim(),
+        line2             = addressLine2Field.text.trim(),
+        line3             = addressLine3Field.text.trim(),
+        postcode          = postcodeField.text.trim(),
+        clientId          = clientIdField.text.trim(),
+        clientSecret      = clientSecretField.text.trim(),
     )
 
     private fun bindSaveButton() {
@@ -123,6 +130,7 @@ class SettingsPane(
             clientIdField.textProperty(),
             clientSecretField.textProperty(),
             businessIdField.textProperty(),
+            businessIdForeignField.textProperty(),
         )
         saveBtn.disableProperty().bind(isDirty.not())
     }
@@ -180,6 +188,11 @@ class SettingsPane(
             setOnAction { handleFetchBusinessId() }
         }
 
+        val fetchForeignBusinessIdBtn = Button("Fetch from HMRC").apply {
+            styleClass.add("primary-action-button")
+            setOnAction { handleFetchForeignBusinessId() }
+        }
+
         return buildSection(
             title = "Your details",
             hint  = "Personal details required for HMRC API calls",
@@ -192,8 +205,11 @@ class SettingsPane(
                 buildRow("Postcode",                         postcodeField),
                 buildRow("National Insurance number (NINO)", ninoField),
                 buildRow("Self Assessment UTR",              utrField),
-                buildRow("Business ID", HBox(8.0).apply {
+                buildRow("UK property business ID", HBox(8.0).apply {
                     children.addAll(businessIdField, fetchBusinessIdBtn)
+                }),
+                buildRow("Foreign property business ID", HBox(8.0).apply {
+                    children.addAll(businessIdForeignField, fetchForeignBusinessIdBtn)
                 }),
             ),
         )
@@ -226,17 +242,18 @@ class SettingsPane(
     }
 
     private fun handleSave() {
-        val nino         = ninoField.text.trim()
-        val utr          = utrField.text.trim()
-        val businessId   = businessIdField.text.trim()
-        val fullName     = fullNameField.text.trim()
-        val dob          = dateOfBirthField.text.trim()
-        val line1        = addressLine1Field.text.trim()
-        val line2        = addressLine2Field.text.trim()
-        val line3        = addressLine3Field.text.trim()
-        val postcode     = postcodeField.text.trim()
-        val clientId     = clientIdField.text.trim()
-        val clientSecret = clientSecretField.text.trim()
+        val nino              = ninoField.text.trim()
+        val utr               = utrField.text.trim()
+        val businessId        = businessIdField.text.trim()
+        val businessIdForeign = businessIdForeignField.text.trim()
+        val fullName          = fullNameField.text.trim()
+        val dob               = dateOfBirthField.text.trim()
+        val line1             = addressLine1Field.text.trim()
+        val line2             = addressLine2Field.text.trim()
+        val line3             = addressLine3Field.text.trim()
+        val postcode          = postcodeField.text.trim()
+        val clientId          = clientIdField.text.trim()
+        val clientSecret      = clientSecretField.text.trim()
 
         if (nino.isBlank()) {
             Dialogs.showError("Please enter your National Insurance number.")
@@ -248,18 +265,19 @@ class SettingsPane(
         }
 
         val settings = HmrcSettings(
-            userId       = userId,
-            clientId     = clientId,
-            clientSecret = clientSecret,
-            nino         = nino,
-            utr          = utr,
-            businessId   = businessId,
-            fullName     = fullName,
-            dateOfBirth  = dob,
-            addressLine1 = line1,
-            addressLine2 = line2,
-            addressLine3 = line3,
-            postcode     = postcode,
+            userId            = userId,
+            clientId          = clientId,
+            clientSecret      = clientSecret,
+            nino              = nino,
+            utr               = utr,
+            businessId        = businessId,
+            businessIdForeign = businessIdForeign,
+            fullName          = fullName,
+            dateOfBirth       = dob,
+            addressLine1      = line1,
+            addressLine2      = line2,
+            addressLine3      = line3,
+            postcode          = postcode,
         )
 
         scope.launch(Dispatchers.IO) {
@@ -333,22 +351,84 @@ class SettingsPane(
         }
     }
 
+    private fun handleFetchForeignBusinessId() {
+        val nino = ninoField.text.trim()
+        if (nino.isBlank()) {
+            Dialogs.showError("Enter your NINO first.")
+            return
+        }
+
+        if (TokenStore.isExpired() || TokenStore.getAccessToken() == null) {
+            Dialogs.showError("Connect to HMRC first via HMRC Connect.")
+            return
+        }
+
+        scope.launch {
+            val settings = withContext(Dispatchers.IO) {
+                settingsRepository.load(userId)
+            }
+
+            if (settings == null || settings.clientId.isBlank()) {
+                Platform.runLater { Dialogs.showError("Save your Client ID and Secret first.") }
+                return@launch
+            }
+
+            val client = HmrcApiClient(
+                libreMtdUserId = userId,
+                isSandbox      = Config.hmrcSandbox,
+                oauth2Handler  = OAuth2Handler(
+                    clientId     = settings.clientId,
+                    clientSecret = settings.clientSecret,
+                    isSandbox    = Config.hmrcSandbox,
+                    prefs = prefs
+                ),
+                fraudHeaders   = FraudPreventionHeaders(),
+            )
+
+            val result = BusinessDetailsClient(client).fetchForeignPropertyBusinessId(
+                nino         = nino,
+                context      = ClientContext(800, 600),
+                testScenario = if (Config.hmrcSandbox) "STATEFUL" else null,
+            )
+
+            Platform.runLater {
+                when (result) {
+                    is ApiResult.Success -> {
+                        businessIdForeignField.text = result.data
+                        scope.launch(Dispatchers.IO) {
+                            settings.copy(businessIdForeign = result.data)
+                                .also { settingsRepository.save(it) }
+                            withContext(Dispatchers.JavaFx) {
+                                savedSnapshot = currentSnapshot()
+                            }
+                        }
+                        onStatusChange("Foreign property business ID fetched and saved: ${result.data} ✓")
+                    }
+                    is ApiResult.Failure -> {
+                        Dialogs.showError(result.message, title = "Fetch Foreign Business ID Failed")
+                    }
+                }
+            }
+        }
+    }
+
     private fun loadSettings() {
         scope.launch(Dispatchers.IO) {
             val settings = settingsRepository.load(userId)
             withContext(Dispatchers.JavaFx) {
                 settings?.let { s ->
-                    ninoField.text         = s.nino
-                    utrField.text          = s.utr
-                    businessIdField.text   = s.businessId
-                    fullNameField.text     = s.fullName
-                    dateOfBirthField.text  = s.dateOfBirth
-                    addressLine1Field.text = s.addressLine1
-                    addressLine2Field.text = s.addressLine2
-                    addressLine3Field.text = s.addressLine3
-                    postcodeField.text     = s.postcode
-                    clientIdField.text     = s.clientId
-                    clientSecretField.text = s.clientSecret
+                    ninoField.text              = s.nino
+                    utrField.text                = s.utr
+                    businessIdField.text         = s.businessId
+                    businessIdForeignField.text  = s.businessIdForeign
+                    fullNameField.text           = s.fullName
+                    dateOfBirthField.text        = s.dateOfBirth
+                    addressLine1Field.text       = s.addressLine1
+                    addressLine2Field.text       = s.addressLine2
+                    addressLine3Field.text       = s.addressLine3
+                    postcodeField.text           = s.postcode
+                    clientIdField.text           = s.clientId
+                    clientSecretField.text       = s.clientSecret
                 }
                 savedSnapshot = currentSnapshot()
             }

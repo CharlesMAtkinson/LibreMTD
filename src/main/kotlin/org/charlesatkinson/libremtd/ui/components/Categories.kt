@@ -54,6 +54,45 @@ enum class ExpenseCategory(val label: String, val dbKey: String) {
 }
 
 /**
+ * Income categories for foreign property letting (HMRC Property Business
+ * API v6.0 foreign property cumulative endpoint). dbKeys deliberately match
+ * the HMRC JSON field names, and are NOT prefixed "Foreign" — propertyId
+ * already disambiguates foreign entries from UK ones in the shared
+ * ExpenseEntries/IncomePropertyEntries tables (via Properties.propertyType).
+ * rentIncome is nested as { rentAmount } in the HMRC payload; here it's
+ * still just one category/amount pair — the nesting is only reconstructed
+ * when the request body is built.
+ */
+enum class ForeignIncomeCategory(val label: String, val dbKey: String) {
+    RentIncome                       ("Rent income",                           "RentIncome"),
+    PremiumsOfLeaseGrant              ("Premiums of lease grant",               "PremiumsOfLeaseGrant"),
+    OtherPropertyIncome                ("Other property income",                 "OtherPropertyIncome"),
+    ForeignTaxPaidOrDeducted           ("Foreign tax paid or deducted",          "ForeignTaxPaidOrDeducted"),
+    SpecialWithholdingTaxOrUkTaxPaid   ("Special withholding tax / UK tax paid", "SpecialWithholdingTaxOrUkTaxPaid"),
+}
+
+/**
+ * Expense categories for foreign property letting (HMRC Property Business
+ * API v6.0 foreign property cumulative endpoint). See ForeignIncomeCategory
+ * for the dbKey naming rationale.
+ *
+ * Note: foreignTaxCreditRelief is NOT here — it's a per-property, per-tax-year
+ * boolean election, not a dated amount, and is handled separately via
+ * ForeignPropertyElections / ForeignPropertyElectionRepository.
+ */
+enum class ForeignExpenseCategory(val label: String, val dbKey: String) {
+    PremisesRunningCosts                 ("Premises running costs",                  "PremisesRunningCosts"),
+    RepairsAndMaintenance                 ("Repairs and maintenance",                 "RepairsAndMaintenance"),
+    FinancialCosts                         ("Financial costs",                         "FinancialCosts"),
+    ProfessionalFees                       ("Professional fees",                       "ProfessionalFees"),
+    TravelCosts                            ("Travel costs",                            "TravelCosts"),
+    CostOfServices                         ("Cost of services",                        "CostOfServices"),
+    ResidentialFinancialCost               ("Residential finance cost",                "ResidentialFinancialCost"),
+    BroughtFwdResidentialFinancialCost     ("Residential finance cost brought forward","BroughtFwdResidentialFinancialCost"),
+    Other                                   ("Other expenses",                          "Other"),
+}
+
+/**
  * Income categories for UK dividends (HMRC UK dividends endpoint).
  */
 enum class DividendCategory(val label: String, val dbKey: String) {
