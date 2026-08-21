@@ -23,7 +23,7 @@ data class HmrcSettings(
     val clientSecret: String,
     val nino: String,
     val utr: String,
-    val businessId: String,
+    val businessIdUk: String,
     val fullName: String,
     val dateOfBirth: String,
     val addressLine1: String,

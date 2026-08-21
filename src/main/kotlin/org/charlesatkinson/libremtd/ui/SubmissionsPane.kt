@@ -17,7 +17,6 @@
 
 package org.charlesatkinson.libremtd.ui
 
-import ForeignCumulativeSubmitSection
 import javafx.geometry.Insets
 import javafx.scene.layout.VBox
 import kotlinx.coroutines.CoroutineScope

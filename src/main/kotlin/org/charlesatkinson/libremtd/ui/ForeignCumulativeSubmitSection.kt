@@ -17,7 +17,7 @@
  *
  */
 
-
+package org.charlesatkinson.libremtd.ui
 
 import javafx.application.Platform
 import javafx.geometry.Insets
@@ -33,11 +33,7 @@ import kotlinx.coroutines.withContext
 import mu.KotlinLogging
 import org.charlesatkinson.libremtd.database.*
 import org.charlesatkinson.libremtd.network.*
-import org.charlesatkinson.libremtd.ui.ForeignExpenseCategory
-import org.charlesatkinson.libremtd.ui.ForeignIncomeCategory
 import org.charlesatkinson.libremtd.ui.components.*
-import org.charlesatkinson.libremtd.ui.requireConnected
-import org.charlesatkinson.libremtd.utils.ApiResult
 
 private val logger = KotlinLogging.logger {}
 

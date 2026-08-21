@@ -57,7 +57,7 @@ class SettingsPane(
 
     private val ninoField         = TextField()
     private val utrField          = TextField()
-    private val businessIdField   = TextField().apply {
+    private val businessIdUkField   = TextField().apply {
         promptText = "Fetched automatically from HMRC"
         prefWidth  = 260.0
         isEditable = false
@@ -85,7 +85,7 @@ class SettingsPane(
     }
 
     private data class SettingsSnapshot(
-        val nino: String, val utr: String, val businessId: String, val businessIdForeign: String,
+        val nino: String, val utr: String, val businessIdUk: String, val businessIdForeign: String,
         val fullName: String, val dob: String,
         val line1: String, val line2: String, val line3: String, val postcode: String,
         val clientId: String, val clientSecret: String,
@@ -104,7 +104,7 @@ class SettingsPane(
     private fun currentSnapshot() = SettingsSnapshot(
         nino              = ninoField.text.trim(),
         utr               = utrField.text.trim(),
-        businessId        = businessIdField.text.trim(),
+        businessIdUk      = businessIdUkField.text.trim(),
         businessIdForeign = businessIdForeignField.text.trim(),
         fullName          = fullNameField.text.trim(),
         dob               = dateOfBirthField.text.trim(),
@@ -129,7 +129,7 @@ class SettingsPane(
             postcodeField.textProperty(),
             clientIdField.textProperty(),
             clientSecretField.textProperty(),
-            businessIdField.textProperty(),
+            businessIdUkField.textProperty(),
             businessIdForeignField.textProperty(),
         )
         saveBtn.disableProperty().bind(isDirty.not())
@@ -183,9 +183,9 @@ class SettingsPane(
             prefWidth  = 120.0
         }
 
-        val fetchBusinessIdBtn = Button("Fetch from HMRC").apply {
+        val fetchBusinessIdUkBtn = Button("Fetch from HMRC").apply {
             styleClass.add("primary-action-button")
-            setOnAction { handleFetchBusinessId() }
+            setOnAction { handleFetchBusinessIdUk() }
         }
 
         val fetchForeignBusinessIdBtn = Button("Fetch from HMRC").apply {
@@ -206,7 +206,7 @@ class SettingsPane(
                 buildRow("National Insurance number (NINO)", ninoField),
                 buildRow("Self Assessment UTR",              utrField),
                 buildRow("UK property business ID", HBox(8.0).apply {
-                    children.addAll(businessIdField, fetchBusinessIdBtn)
+                    children.addAll(businessIdUkField, fetchBusinessIdUkBtn)
                 }),
                 buildRow("Foreign property business ID", HBox(8.0).apply {
                     children.addAll(businessIdForeignField, fetchForeignBusinessIdBtn)
@@ -244,7 +244,7 @@ class SettingsPane(
     private fun handleSave() {
         val nino              = ninoField.text.trim()
         val utr               = utrField.text.trim()
-        val businessId        = businessIdField.text.trim()
+        val businessIdUk      = businessIdUkField.text.trim()
         val businessIdForeign = businessIdForeignField.text.trim()
         val fullName          = fullNameField.text.trim()
         val dob               = dateOfBirthField.text.trim()
@@ -270,7 +270,7 @@ class SettingsPane(
             clientSecret      = clientSecret,
             nino              = nino,
             utr               = utr,
-            businessId        = businessId,
+            businessIdUk      = businessIdUk,
             businessIdForeign = businessIdForeign,
             fullName          = fullName,
             dateOfBirth       = dob,
@@ -290,7 +290,7 @@ class SettingsPane(
         }
     }
 
-    private fun handleFetchBusinessId() {
+    private fun handleFetchBusinessIdUk() {
         val nino = ninoField.text.trim()
         if (nino.isBlank()) {
             Dialogs.showError("Enter your NINO first.")
@@ -333,9 +333,9 @@ class SettingsPane(
             Platform.runLater {
                 when (result) {
                     is ApiResult.Success -> {
-                        businessIdField.text = result.data
+                        businessIdUkField.text = result.data
                         scope.launch(Dispatchers.IO) {
-                            settings.copy(businessId = result.data)
+                            settings.copy(businessIdUk = result.data)
                                 .also { settingsRepository.save(it) }
                             withContext(Dispatchers.JavaFx) {
                                 savedSnapshot = currentSnapshot()
@@ -419,7 +419,7 @@ class SettingsPane(
                 settings?.let { s ->
                     ninoField.text              = s.nino
                     utrField.text                = s.utr
-                    businessIdField.text         = s.businessId
+                    businessIdUkField.text       = s.businessIdUk
                     businessIdForeignField.text  = s.businessIdForeign
                     fullNameField.text           = s.fullName
                     dateOfBirthField.text        = s.dateOfBirth

@@ -50,7 +50,7 @@ class SettingsRepository {
                         postcode          = row[HmrcSettingsTable.postcode],
                         nino              = row[HmrcSettingsTable.nino],
                         utr               = row[HmrcSettingsTable.utr],
-                        businessId        = row[HmrcSettingsTable.businessId],
+                        businessIdUk      = row[HmrcSettingsTable.businessIdUk],
                         businessIdForeign = row[HmrcSettingsTable.businessIdForeign],
                     )
                 }
@@ -72,7 +72,7 @@ class SettingsRepository {
                 it[postcode]          = settings.postcode
                 it[nino]              = settings.nino
                 it[utr]               = settings.utr
-                it[businessId]        = settings.businessId
+                it[businessIdUk]      = settings.businessIdUk
                 it[businessIdForeign] = settings.businessIdForeign
                 it[updatedAt]         = LocalDateTime.now().toString()
             }

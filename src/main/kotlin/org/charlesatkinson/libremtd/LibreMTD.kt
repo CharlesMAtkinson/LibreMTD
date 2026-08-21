@@ -29,6 +29,8 @@ import org.charlesatkinson.libremtd.database.Database
 import org.charlesatkinson.libremtd.ui.LoginScreen
 import org.charlesatkinson.libremtd.utils.AppPaths
 import org.charlesatkinson.libremtd.utils.Config
+import org.charlesatkinson.libremtd.utils.enforceLogFilePermissions
+import org.charlesatkinson.libremtd.utils.scheduleLogFilePermissionEnforcement
 
 private val logger = KotlinLogging.logger {}
 
@@ -44,6 +46,14 @@ class LibreMTD : Application() {
         logger.info { "Device ID file: ${AppPaths.deviceIdFile}" }
 
         try {
+            // Fix up log file permissions now, and keep fixing them
+            // periodically in case the app is left running across a
+            // daily log rollover. AppPaths.logDir must be (or be
+            // convertible to) a java.nio.file.Path — adjust below if
+            // it is actually a File or String.
+            enforceLogFilePermissions(AppPaths.logDir)
+            scheduleLogFilePermissionEnforcement(AppPaths.logDir)
+
             // Initialize database
             Database.init(AppPaths.dbPath)
             logger.info { "Database initialized successfully" }

@@ -125,7 +125,7 @@ class CumulativeSubmitSection(
 
             val result = PropertyUkSubmissionClient(client).submitCumulative(
                 nino       = settings.nino,
-                businessId = settings.businessId,
+                businessId = settings.businessIdUk,
                 taxYear    = taxYear,
                 fromDate   = fromDate,
                 toDate     = toDate,

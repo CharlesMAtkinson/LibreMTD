@@ -81,15 +81,6 @@ tasks.jar {
     manifest {
         attributes["Main-Class"] = "org.charlesatkinson.libremtd.LibreMTDKt"
     }
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-
-    // Include all dependencies
-    from(configurations.runtimeClasspath.get().map {
-        if (it.isDirectory) it else zipTree(it)
-    })
-
-    // Exclude signature files that cause issues
-    exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA")
 }
 
 tasks.named("run") {
@@ -100,11 +91,6 @@ tasks.processResources {
     val projectVersion = version.toString()
     val buildDate = LocalDate.now().toString()
 
-    // Register these as tracked inputs. Without this, Gradle only watches
-    // the source build.properties file for changes; since its literal
-    // content ("version=${version}") never changes, Gradle marks this task
-    // UP-TO-DATE on every build after the first and skips re-filtering it —
-    // silently leaving a stale version/buildDate in the packaged output.
     inputs.property("projectVersion", projectVersion)
     inputs.property("buildDate", buildDate)
 
@@ -116,13 +102,28 @@ tasks.processResources {
     }
 }
 
+// Fat jar, built only for packageDistribution — a single portable jar
+// someone can run with a bare "java -jar". Not used by installDist/run.
+tasks.register<Jar>("fatJar") {
+    archiveClassifier.set("all")
+    manifest {
+        attributes["Main-Class"] = "org.charlesatkinson.libremtd.LibreMTDKt"
+    }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+    from(sourceSets.main.get().output)
+    from(configurations.runtimeClasspath.get().map {
+        if (it.isDirectory) it else zipTree(it)
+    })
+
+    exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA")
+}
+
 // Task for building distributable package
 tasks.register<Zip>("packageDistribution") {
-    dependsOn("jar")
+    dependsOn("fatJar")
 
-    from("build/libs") {
-        include("*.jar")
-    }
+    from(tasks.named("fatJar"))
     from("README.md")
     from("LICENSE")
 

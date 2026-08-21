@@ -24,9 +24,11 @@ import org.charlesatkinson.libremtd.security.FraudPreventionHeaders
 import org.charlesatkinson.libremtd.security.OAuth2Handler
 import org.charlesatkinson.libremtd.utils.Config
 import java.net.URI
+import java.net.URLEncoder
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.nio.charset.StandardCharsets
 import java.time.Duration
 
 private val logger = KotlinLogging.logger {}
@@ -43,6 +45,19 @@ class HmrcApiClient(
     private val httpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(30))
         .build()
+
+    /**
+     * Builds a request URI from [path] and [params], URL-encoding each
+     * parameter name and value. Shared by get, post and put so there is
+     * exactly one place that knows how to combine baseUrl + path + query.
+     */
+    private fun buildUri(path: String, params: Map<String, String>): URI {
+        val query = if (params.isEmpty()) ""
+        else "?" + params.entries.joinToString("&") { (k, v) ->
+            "${URLEncoder.encode(k, StandardCharsets.UTF_8)}=${URLEncoder.encode(v, StandardCharsets.UTF_8)}"
+        }
+        return URI.create("$baseUrl$path$query")
+    }
 
     /**
      * Builds the fraud prevention headers for [context] and adds them to
@@ -88,16 +103,15 @@ class HmrcApiClient(
             return@withContext null
         }
 
-        val query = if (params.isEmpty()) ""
-        else "?" + params.entries.joinToString("&") { (k, v) -> "$k=$v" }
+        val uri = buildUri(path, params)
 
         val builder = HttpRequest.newBuilder()
-            .uri(URI.create("$baseUrl$path$query"))
+            .uri(uri)
             .header("Authorization",  "Bearer $token")
             .header("Accept",         "application/vnd.hmrc.$version+json")
             .header("Content-Type",   "application/json")
             .GET()
-        logger.info { "GET request to: $baseUrl$path$query with version $version" }
+        logger.info { "GET request to: $uri with version $version" }
 
         // Add fraud prevention headers
         applyFraudPreventionHeaders(builder, context)
@@ -112,18 +126,20 @@ class HmrcApiClient(
         try {
             val response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString())
             logger.info { "GET $path → ${response.statusCode()}" }
+            ResponseStatusNullOr504.record("GET", path, body = null, statusCode = response.statusCode())
             response
         } catch (e: Exception) {
             logger.error(e) { "GET $path failed" }
+            ResponseStatusNullOr504.record("GET", path, body = null, statusCode = null)
             null
         }
     }
 
-    // TODO: A cleaner design would accept an optional queryParams: Map<String, String> argument and build the
-    // URI using a URIBuilder or similar, keeping path and query string separate
     suspend fun post(
         path:    String,
         body:    String,
+        // When params was added it was not used by any caller
+        params:  Map<String, String> = emptyMap(),
         context: ClientContext,
         version: String = "8.0",
         extraHeaders: Map<String, String> = emptyMap(),
@@ -133,13 +149,15 @@ class HmrcApiClient(
             return@withContext null
         }
 
+        val uri = buildUri(path, params)
+
         val builder = HttpRequest.newBuilder()
-            .uri(URI.create("$baseUrl$path"))
+            .uri(uri)
             .header("Authorization", "Bearer $token")
             .header("Accept",        "application/vnd.hmrc.$version+json")
             .header("Content-Type",  "application/json")
             .POST(HttpRequest.BodyPublishers.ofString(body))
-        logger.info { "POST request to: $baseUrl$path with version $version" }
+        logger.info { "POST request to: $uri with version $version" }
 
         applyFraudPreventionHeaders(builder, context)
 
@@ -153,9 +171,11 @@ class HmrcApiClient(
             if (response.statusCode() !in listOf(200, 201, 202, 204)) {
                 logger.warn { "POST $path non-success body: ${response.body()}" }
             }
+            ResponseStatusNullOr504.record("POST", path, body = body, statusCode = response.statusCode())
             response
         } catch (e: Exception) {
             logger.error(e) { "POST $path failed" }
+            ResponseStatusNullOr504.record("POST", path, body = body, statusCode = null)
             null
         }
     }
@@ -163,6 +183,8 @@ class HmrcApiClient(
     suspend fun put(
         path:    String,
         body:    String,
+        // When params was added it was not used by any caller
+        params:  Map<String, String> = emptyMap(),
         context: ClientContext,
         version: String = "6.0",
         extraHeaders: Map<String, String> = emptyMap(),
@@ -172,13 +194,15 @@ class HmrcApiClient(
             return@withContext null
         }
 
+        val uri = buildUri(path, params)
+
         val builder = HttpRequest.newBuilder()
-            .uri(URI.create("$baseUrl$path"))
+            .uri(uri)
             .header("Authorization", "Bearer $token")
             .header("Accept",        "application/vnd.hmrc.$version+json")
             .header("Content-Type",  "application/json")
             .PUT(HttpRequest.BodyPublishers.ofString(body))
-        logger.info { "PUT request to: $baseUrl$path with version $version" }
+        logger.info { "PUT request to: $uri with version $version" }
 
         // Add fraud prevention headers
         applyFraudPreventionHeaders(builder, context)
@@ -191,11 +215,13 @@ class HmrcApiClient(
             val response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString())
             logger.info { "PUT $path → ${response.statusCode()}" }
             if (response.statusCode() != 204) {
-                logger.info { "Response body: ${response.body()}" }
+                logger.warn { "PUT $path non-success body: ${response.body()}" }
             }
+            ResponseStatusNullOr504.record("PUT", path, body = body, statusCode = response.statusCode())
             response
         } catch (e: Exception) {
             logger.error(e) { "PUT $path failed" }
+            ResponseStatusNullOr504.record("PUT", path, body = body, statusCode = null)
             null
         }
     }

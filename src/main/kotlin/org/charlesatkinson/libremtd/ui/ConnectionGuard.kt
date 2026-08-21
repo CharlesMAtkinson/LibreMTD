@@ -57,7 +57,7 @@ suspend fun requireConnected(
         onFailure("Not connected to HMRC")
         return null
     }
-    if (requireBusinessId && settings.businessId.isBlank()) {
+    if (requireBusinessId && settings.businessIdUk.isBlank()) {
         onFailure("Business ID not set — go to Settings")
         return null
     }

@@ -25,7 +25,7 @@ object HmrcSettings : Table("hmrc_settings") {
     val clientSecret      = text("client_secret").default("")
     val nino              = text("nino").default("")
     val utr               = text("utr").default("")
-    val businessId        = text("business_id").default("")
+    val businessIdUk      = text("business_id_uk").default("")
     val businessIdForeign = text("business_id_foreign").default("")
     val fullName          = text("full_name").default("")
     val dateOfBirth       = text("date_of_birth").default("")
