@@ -34,6 +34,7 @@ import org.charlesatkinson.libremtd.database.ExpensePropertyUkEntry
 import org.charlesatkinson.libremtd.ui.components.Dialogs
 import org.charlesatkinson.libremtd.ui.components.PeriodSelector
 import org.charlesatkinson.libremtd.ui.components.PropertySelector
+import org.charlesatkinson.libremtd.ui.components.hintLabel
 import org.charlesatkinson.libremtd.ui.components.wrappingLabel
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
@@ -80,9 +81,7 @@ class ExpensesPropertyUkPane(
                 wrappingLabel("Expenses (property, UK)").apply {
                     style = "-fx-font-size: 22px; -fx-font-weight: bold;"
                 },
-                wrappingLabel("Record allowable expenses for the selected property and quarter.").apply {
-                    styleClass.add("hint-label")
-                },
+                hintLabel("Record allowable expenses for the selected property and quarter."),
                 propertySelector.root,
                 periodSelector.root,
                 buildEntryForm(),

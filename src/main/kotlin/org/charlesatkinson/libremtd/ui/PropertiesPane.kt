@@ -146,12 +146,10 @@ class PropertiesPane(
                 wrappingLabel("Properties").apply {
                     style = "-fx-font-size: 22px; -fx-font-weight: bold;"
                 },
-                wrappingLabel(
+                hintLabel(
                     "Manage your let properties. Income and expenses are recorded per property " +
                             "and aggregated across all properties when submitting to HMRC."
-                ).apply {
-                    styleClass.add("hint-label")
-                },
+                ),
                 buildEntryForm(),
                 buildUkPropertiesTable(),
                 buildForeignPropertiesTable(),

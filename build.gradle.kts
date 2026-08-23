@@ -63,6 +63,12 @@ dependencies {
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
     testImplementation("io.mockk:mockk:1.13.9")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+
+    // TestFX - JavaFX UI testing (JUnit 5). Runs against a real display for
+    // now, per our agreement; if headless (CI/SSH) test runs are ever
+    // needed, the plan is to wrap the test run with Xvfb rather than change
+    // anything here.
+    testImplementation("org.testfx:testfx-junit5:4.0.18")
 }
 
 kotlin {

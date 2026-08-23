@@ -41,6 +41,7 @@ import org.charlesatkinson.libremtd.ui.components.Dialogs
 import org.charlesatkinson.libremtd.utils.ApiResult
 import org.charlesatkinson.libremtd.utils.Config
 import org.charlesatkinson.libremtd.ui.components.UiPreferences
+import org.charlesatkinson.libremtd.ui.components.hintLabel
 import org.charlesatkinson.libremtd.ui.components.wrappingLabel
 
 private val logger = KotlinLogging.logger {}
@@ -450,8 +451,7 @@ class SettingsPane(
                         wrappingLabel(title).apply {
                             style = "-fx-font-size: 15px; -fx-font-weight: bold;"
                         },
-                        wrappingLabel(hint).apply {
-                            styleClass.add("hint-label")
+                        hintLabel(hint).apply {
                             style = "-fx-font-size: 11px;"
                         },
                     )

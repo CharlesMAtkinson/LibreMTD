@@ -35,6 +35,7 @@ import org.charlesatkinson.libremtd.security.TokenStore
 import org.charlesatkinson.libremtd.ui.components.TaxYearSelector
 import org.charlesatkinson.libremtd.ui.components.previousCompletedTaxYear
 import org.charlesatkinson.libremtd.utils.ApiResult
+import org.charlesatkinson.libremtd.ui.components.hintLabel
 import org.charlesatkinson.libremtd.ui.components.wrappingLabel
 
 private val logger = KotlinLogging.logger {}
@@ -64,17 +65,14 @@ class TaxSummaryPane(
     private val calculationTypeLabel   = wrappingLabel("—")
 
     // Hint label for the Tax & NICs section — updated whenever a result arrives.
-    private val taxSectionHint = wrappingLabel("Estimated liability for $currentTaxYear").apply {
-        styleClass.add("hint-label")
+    private val taxSectionHint = hintLabel("Estimated liability for $currentTaxYear").apply {
         style = "-fx-font-size: 11px;"
     }
 
     private val refreshBtn   = Button("Request tax calculation from HMRC").apply {
         styleClass.add("primary-action-button")
     }
-    private val inlineStatus = wrappingLabel("").apply {
-        styleClass.add("hint-label")
-    }
+    private val inlineStatus = hintLabel("")
 
     // taxYearSelector last, so all labels it touches are already initialised
     private val taxYearSelector = TaxYearSelector(
@@ -101,12 +99,9 @@ class TaxSummaryPane(
                 wrappingLabel("Tax Summary").apply {
                     style = "-fx-font-size: 22px; -fx-font-weight: bold;"
                 },
-                wrappingLabel(
+                hintLabel(
                     "An estimate of your income tax position, based on data submitted to HMRC."
-                ).apply {
-                    styleClass.add("hint-label")
-                    isWrapText = true
-                },
+                ),
                 buildYearSelector(),
                 buildDisclaimerBanner(),
                 buildIncomeSection(),
@@ -154,8 +149,7 @@ class TaxSummaryPane(
     private fun buildIncomeSection(): VBox {
         return buildSection(
             title    = "Income & Allowances",
-            hintNode = wrappingLabel("Figures from the HMRC calculation").apply {
-                styleClass.add("hint-label")
+            hintNode = hintLabel("Figures from the HMRC calculation").apply {
                 style = "-fx-font-size: 11px;"
             },
             rows = listOf(
@@ -185,8 +179,7 @@ class TaxSummaryPane(
     private fun buildMetadataSection(): VBox {
         return buildSection(
             title    = "Calculation Details",
-            hintNode = wrappingLabel("Technical reference from HMRC").apply {
-                styleClass.add("hint-label")
+            hintNode = hintLabel("Technical reference from HMRC").apply {
                 style = "-fx-font-size: 11px;"
             },
             rows = listOf(

@@ -32,6 +32,7 @@ import org.charlesatkinson.libremtd.database.IncomeSavingsRepository
 import org.charlesatkinson.libremtd.database.taxYearForDate
 import org.charlesatkinson.libremtd.ui.components.Dialogs
 import org.charlesatkinson.libremtd.ui.components.TaxYearSelector
+import org.charlesatkinson.libremtd.ui.components.hintLabel
 import org.charlesatkinson.libremtd.ui.components.wrappingLabel
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
@@ -74,9 +75,7 @@ class SavingsIncomePane(
                 wrappingLabel("Income (savings)").apply {
                     style = "-fx-font-size: 22px; -fx-font-weight: bold;"
                 },
-                wrappingLabel("Record savings interest received. The tax year is derived from the transaction date.").apply {
-                    styleClass.add("hint-label")
-                },
+                hintLabel("Record savings interest received. The tax year is derived from the transaction date."),
                 taxYearSelector.root,
                 buildEntryForm(),
                 buildEntriesTable(),
