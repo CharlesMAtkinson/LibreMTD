@@ -19,6 +19,7 @@ package org.charlesatkinson.libremtd.security
 
 import mu.KotlinLogging
 import org.charlesatkinson.libremtd.database.UserRepository
+import org.charlesatkinson.libremtd.security.OAuth2Handler
 import java.time.LocalDateTime
 
 private val logger = KotlinLogging.logger {}
@@ -53,6 +54,13 @@ object TokenStore {
         return LocalDateTime.now().isAfter(exp.minusMinutes(1))
     }
 
+    /**
+     * Single source of truth for "are we usably connected to HMRC right now".
+     * Used consistently by SettingsPane and ConnectionGuard so there is only
+     * one place that defines what "connected" means.
+     */
+    fun isConnected(): Boolean = !isExpired() && getAccessToken() != null
+
     fun clear(userId: Int) {
         accessToken  = null
         refreshToken = null
@@ -78,4 +86,11 @@ object TokenStore {
         this.expiresAt    = expiresAt
         logger.info { "Token store restored from database, expires at $expiresAt" }
     }
+
+    /**
+     * Test-only hook: resets in-memory state without touching the database.
+     * Equivalent to clearMemory(), given a distinct name so its purpose in
+     * test code is unambiguous.
+     */
+    fun reset() = clearMemory()
 }

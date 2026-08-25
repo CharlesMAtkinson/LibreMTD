@@ -53,7 +53,7 @@ suspend fun requireConnected(
         onFailure("NINO not set — go to Settings")
         return null
     }
-    if (TokenStore.isExpired() || TokenStore.getAccessToken() == null) {
+    if (!TokenStore.isConnected()) {
         onFailure("Not connected to HMRC")
         return null
     }

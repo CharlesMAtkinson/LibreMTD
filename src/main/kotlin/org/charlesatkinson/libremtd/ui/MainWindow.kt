@@ -427,6 +427,7 @@ class MainWindow(
 
     private fun handleLogOut() {
         TokenStore.clearMemory()
+        apiClient = null
         paneCache.clear()
         setStatus("Logged out")
     }

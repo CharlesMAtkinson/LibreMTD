@@ -298,7 +298,7 @@ class SettingsPane(
             return
         }
 
-        if (TokenStore.isExpired() || TokenStore.getAccessToken() == null) {
+        if (!TokenStore.isConnected()) {
             Dialogs.showError("Connect to HMRC first via HMRC Connect.")
             return
         }
@@ -359,7 +359,7 @@ class SettingsPane(
             return
         }
 
-        if (TokenStore.isExpired() || TokenStore.getAccessToken() == null) {
+        if (!TokenStore.isConnected()) {
             Dialogs.showError("Connect to HMRC first via HMRC Connect.")
             return
         }
