@@ -18,7 +18,6 @@
 /*
  * light-theme.css
  * Full light colour set for LibreMTD.
- * Replaces dark-theme.css entirely — not layered on top of it.
  */
 
 .root {
@@ -98,10 +97,10 @@
 /* ── Check boxes and radio buttons ────────────────────────────────────── */
 /* Explicit text-fill rather than relying on the -fx-text-base-color /
    -fx-text-background-color fallback that CheckBox/RadioButton use by
-   default — that fallback was producing invisible label text in the green
-   theme (confirmed there by forcing an inline -fx-text-fill: red override).
-   Added here too as a precaution, on the same reasoning as
-   .content-card .label / .dialog-pane .label below already being explicit. */
+   default — that fallback was producing invisible label text in at least
+   one theme (confirmed by forcing an inline -fx-text-fill: red override).
+   Added here as a precaution, on the same reasoning as .content-card
+   .label / .dialog-pane .label below already being explicit. */
 .check-box, .radio-button {
     -fx-text-fill: #212121;
 }
@@ -120,13 +119,29 @@
     -fx-border-color: #999999;
 }
 
-/* ── Combo box: keep legible when only one option exists ──────────────── */
+/* ── Combo box: keep the displayed value legible in both the open
+   (enabled) and single-choice (disabled) states ───────────────────────── */
+/* JavaFX's built-in Modena stylesheet treats a ComboBox's displayed value
+   as an internally "selected" list-cell, and paints it from -fx-accent /
+   a computed light-or-dark text choice at higher CSS specificity than a
+   plain .list-cell rule — confirmed by testing that -fx-text-fill without
+   !important had no visible effect at all, even set to red. This theme's
+   accent (#0096c9) is a mid-tone blue, so it needs dark text: #212121
+   gives 4.76:1 contrast against it, comfortably clearing the 4.5:1 AA
+   threshold. The rule below covers both an ordinary open combo box (e.g.
+   the Period selector) and a disabled one showing its only choice (e.g.
+   the Property selector when there is a single property) — no separate
+   :disabled variant of the text-fill rule is needed, only the opacity
+   override. */
+.combo-box .list-cell {
+    -fx-text-fill: #212121 !important;
+}
+
 .combo-box:disabled {
     -fx-opacity: 1.0;
 }
 
 .combo-box:disabled .list-cell {
-    -fx-text-fill: #212121;
     -fx-opacity: 1.0;
 }
 
@@ -211,9 +226,12 @@
     -fx-background-color: #f5f5f5;
 }
 
+/* Text changed from #ffffff to #212121: this theme's accent (#0096c9) is
+   too light for white text to pass 4.5:1 (≈3.39:1). #212121 gives
+   4.76:1. */
 .list-cell:selected {
     -fx-background-color: #0096c9;
-    -fx-text-fill: #ffffff;
+    -fx-text-fill: #212121;
 }
 
 /* ── Menu bar ─────────────────────────────────────────────────────────── */
@@ -232,10 +250,12 @@
     -fx-background-color: #0096c9;
 }
 
+/* Text changed from #ffffff to #212121 for the same reason as
+   .list-cell:selected above. */
 .menu:hover > .label,
 .menu:focused > .label,
 .menu:showing > .label {
-    -fx-text-fill: #ffffff;
+    -fx-text-fill: #212121;
 }
 
 .context-menu, .menu-item {
@@ -251,8 +271,9 @@
     -fx-background-color: #0096c9;
 }
 
+/* Text changed from #ffffff to #212121 for the same reason as above. */
 .menu-item:focused .label {
-    -fx-text-fill: #ffffff;
+    -fx-text-fill: #212121;
 }
 
 /* ── MTD connection status ────────────────────────────────────────────── */
@@ -382,8 +403,10 @@
     -fx-background-color: #0096c9;
 }
 
+/* Text changed from #ffffff to #212121 for the same reason as
+   .list-cell:selected above. */
 .table-row-cell:selected .table-cell {
-    -fx-text-fill: #ffffff;
+    -fx-text-fill: #212121;
 }
 
 .table-cell {
@@ -415,7 +438,7 @@
 .text-field, .text-area, .combo-box, .choice-box, .spinner .text-field {
     -fx-background-color: #ffffff;
     -fx-text-fill: #212121;
-    -fx-prompt-text-fill: #aaaaaa;
+    -fx-prompt-text-fill: #757575;
     -fx-border-color: #cccccc;
     -fx-border-radius: 3px;
 }
