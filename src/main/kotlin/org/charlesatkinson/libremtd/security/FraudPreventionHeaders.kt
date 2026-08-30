@@ -48,73 +48,129 @@ class FraudPreventionHeaders {
     private val logger = KotlinLogging.logger {}
 
     /**
-     * Gets all required fraud prevention headers for API requests
+     * The full set of headers HMRC requires. Shared between [buildHeaders]'s
+     * per-header error handling context and [buildValidatedHeaders]'s
+     * missing-header reporting, so the two can't drift out of step.
+     */
+    private val requiredHeaders = listOf(
+        "Gov-Client-Connection-Method",
+        "Gov-Client-Device-ID",
+        "Gov-Client-User-IDs",
+        "Gov-Client-Timezone",
+        "Gov-Client-Local-IPs",
+        "Gov-Client-Local-IPs-Timestamp",
+        "Gov-Client-Screens",
+        "Gov-Client-Window-Size",
+        "Gov-Client-User-Agent",
+        "Gov-Vendor-Version",
+        "Gov-Vendor-Product-Name",
+        "Gov-Vendor-License-IDs"
+    )
+
+    /**
+     * Runs a single header-generating block, catching and logging any
+     * exception with the header's name and the exception's type and
+     * message, rather than letting it abort the whole batch. Returns null
+     * on failure so the caller can simply skip adding that header - this
+     * means one failing header (for example, [getScreenInfo] on a headless
+     * JVM) no longer silently prevents every header after it from being
+     * generated.
+     */
+    private fun <T> attempt(headerName: String, block: () -> T): T? =
+        try {
+            block()
+        } catch (e: Exception) {
+            logger.error(e) {
+                "Failed to generate $headerName: ${e.javaClass.simpleName}: ${e.message}"
+            }
+            null
+        }
+
+    /**
+     * Gets all required fraud prevention headers for API requests.
+     * Each header is generated independently, so a failure generating one
+     * header does not prevent the others from being generated - see
+     * [attempt]. Callers that need to guarantee HMRC's required set is
+     * complete should use [buildValidatedHeaders] instead.
      */
     fun buildHeaders(context: ClientContext): Map<String, String> {
         val headers = mutableMapOf<String, String>()
 
-        try {
-            // Gov-Client-Connection-Method (REQUIRED)
-            headers["Gov-Client-Connection-Method"] = "DESKTOP_APP_DIRECT"
+        // Gov-Client-Connection-Method (REQUIRED)
+        attempt("Gov-Client-Connection-Method") { "DESKTOP_APP_DIRECT" }
+            ?.let { headers["Gov-Client-Connection-Method"] = it }
 
-            // Gov-Client-Device-ID (REQUIRED)
-            headers["Gov-Client-Device-ID"] = getOrCreateDeviceId()
+        // Gov-Client-Device-ID (REQUIRED)
+        attempt("Gov-Client-Device-ID") { getOrCreateDeviceId() }
+            ?.let { headers["Gov-Client-Device-ID"] = it }
 
-            // Gov-Client-User-IDs (REQUIRED)
-            headers["Gov-Client-User-IDs"] = getUserIds()
+        // Gov-Client-User-IDs (REQUIRED)
+        attempt("Gov-Client-User-IDs") { getUserIds() }
+            ?.let { headers["Gov-Client-User-IDs"] = it }
 
-            // Gov-Client-Timezone (REQUIRED)
-            headers["Gov-Client-Timezone"] = getTimezone()
+        // Gov-Client-Timezone (REQUIRED)
+        attempt("Gov-Client-Timezone") { getTimezone() }
+            ?.let { headers["Gov-Client-Timezone"] = it }
 
-            // Gov-Client-Local-IPs (REQUIRED)
-            headers["Gov-Client-Local-IPs"] = getLocalIPs()
+        // Gov-Client-Local-IPs (REQUIRED)
+        attempt("Gov-Client-Local-IPs") { getLocalIPs() }
+            ?.let { headers["Gov-Client-Local-IPs"] = it }
 
-            // Gov-Client-Local-IPs-Timestamp (REQUIRED) — captured as close as
-            // possible to when Gov-Client-Local-IPs itself was collected, above.
-            headers["Gov-Client-Local-IPs-Timestamp"] = getLocalIpsTimestamp()
+        // Gov-Client-Local-IPs-Timestamp (REQUIRED) — captured as close as
+        // possible to when Gov-Client-Local-IPs itself was collected, above.
+        attempt("Gov-Client-Local-IPs-Timestamp") { getLocalIpsTimestamp() }
+            ?.let { headers["Gov-Client-Local-IPs-Timestamp"] = it }
 
-            // Gov-Client-Screens (REQUIRED)
-            headers["Gov-Client-Screens"] = getScreenInfo()
+        // Gov-Client-Screens (REQUIRED)
+        attempt("Gov-Client-Screens") { getScreenInfo() }
+            ?.let { headers["Gov-Client-Screens"] = it }
 
-            // Gov-Client-Window-Size (REQUIRED)
-            headers["Gov-Client-Window-Size"] =
-                "width=${context.windowWidth}&height=${context.windowHeight}"
+        // Gov-Client-Window-Size (REQUIRED)
+        attempt("Gov-Client-Window-Size") {
+            "width=${context.windowWidth}&height=${context.windowHeight}"
+        }?.let { headers["Gov-Client-Window-Size"] = it }
 
-            // Gov-Client-User-Agent (REQUIRED)
-            headers["Gov-Client-User-Agent"] = getUserAgent()
+        // Gov-Client-User-Agent (REQUIRED)
+        attempt("Gov-Client-User-Agent") { getUserAgent() }
+            ?.let { headers["Gov-Client-User-Agent"] = it }
 
-            // Gov-Vendor-Version (REQUIRED for vendor software)
-            headers["Gov-Vendor-Version"] = getVendorVersion()
+        // Gov-Vendor-Version (REQUIRED for vendor software)
+        attempt("Gov-Vendor-Version") { getVendorVersion() }
+            ?.let { headers["Gov-Vendor-Version"] = it }
 
-            // Gov-Vendor-Product-Name (REQUIRED)
-            headers["Gov-Vendor-Product-Name"] = getVendorProductName()
+        // Gov-Vendor-Product-Name (REQUIRED)
+        attempt("Gov-Vendor-Product-Name") { getVendorProductName() }
+            ?.let { headers["Gov-Vendor-Product-Name"] = it }
 
-            // Gov-Vendor-License-IDs (REQUIRED — sent with an empty value,
-            // since LibreMTD is FOSS and has no license key to report)
-            headers["Gov-Vendor-License-IDs"] = getVendorLicenseIds()
+        // Gov-Vendor-License-IDs (REQUIRED — sent with an empty value,
+        // since LibreMTD is FOSS and has no licence key to report)
+        attempt("Gov-Vendor-License-IDs") { getVendorLicenseIds() }
+            ?.let { headers["Gov-Vendor-License-IDs"] = it }
 
-            // Gov-Client-Public-IP (RECOMMENDED)
-            getPublicIP()?.let { headers["Gov-Client-Public-IP"] = it }
+        // Gov-Client-Public-IP (RECOMMENDED)
+        attempt("Gov-Client-Public-IP") { getPublicIP() }
+            ?.let { headers["Gov-Client-Public-IP"] = it }
 
-            // Gov-Client-MAC-Addresses (OPTIONAL but recommended)
-            headers["Gov-Client-MAC-Addresses"] = getMACAddresses()
-
-        } catch (e: Exception) {
-            logger.error(e) { "Error generating fraud prevention headers" }
-        }
+        // Gov-Client-MAC-Addresses (OPTIONAL but recommended)
+        attempt("Gov-Client-MAC-Addresses") { getMACAddresses() }
+            ?.let { headers["Gov-Client-MAC-Addresses"] = it }
 
         return headers
     }
 
     /**
      * Builds and validates fraud prevention headers.
-     * Fails fast if headers are not compliant.
+     * Fails fast if headers are not compliant, and names the specific
+     * headers that are missing so the underlying cause (logged by
+     * [attempt] when [buildHeaders] ran) can be found quickly.
      */
     fun buildValidatedHeaders(context: ClientContext): Map<String, String> {
         val headers = buildHeaders(context)
+        val missing = requiredHeaders.filter { it !in headers }
 
-        require(validateHeaders(headers)) {
-            "Invalid fraud prevention headers"
+        require(missing.isEmpty()) {
+            "Invalid fraud prevention headers - missing: ${missing.joinToString(", ")}. " +
+                    "See the log for the exception recorded against each missing header."
         }
 
         return headers
@@ -289,7 +345,7 @@ class FraudPreventionHeaders {
         // Calculate scaling factor
         val scalingFactor = resolution / 96.0
 
-        // Assume 24-bit color depth (standard for modern displays)
+        // Assume 24-bit colour depth (standard for modern displays)
         val colorDepth = 24
 
         return "width=${screenSize.width}&height=${screenSize.height}" +
@@ -399,13 +455,13 @@ class FraudPreventionHeaders {
         percentEncode(Config.APP_NAME)
 
     /**
-     * Gets Gov-Vendor-License-IDs. LibreMTD is FOSS and has no real license
+     * Gets Gov-Vendor-License-IDs. LibreMTD is FOSS and has no real licence
      * key to report — but HMRC's validator treats an empty value here as a
      * hard error ("value is missing" / "value is not hashed"), not merely
      * a warning, contrary to older anecdotal guidance. So this generates a
      * persistent, installation-specific identifier (same pattern as
      * getOrCreateDeviceId() above), hashed with SHA-256 before sending.
-     * It doesn't represent a real software license — it exists purely to
+     * It doesn't represent a real software licence — it exists purely to
      * satisfy the header's technical requirement for a persistent hashed
      * value — but it's stable across runs on the same installation, which
      * is the property HMRC's spec actually asks for.
@@ -426,7 +482,7 @@ class FraudPreventionHeaders {
             Files.setPosixFilePermissions(pseudoLicenseIdFile, PosixFilePermissions.fromString("rw-r--r--"))
             newId
         } catch (e: Exception) {
-            logger.warn(e) { "Could not persist pseudo-license id; using a session-only value" }
+            logger.warn(e) { "Could not persist pseudo-licence id; using a session-only value" }
             // Falls back to a fresh UUID each call if we can't write to disk at all —
             // not stable across runs, but still satisfies the header's format.
             UUID.randomUUID().toString()
@@ -442,21 +498,6 @@ class FraudPreventionHeaders {
      * Validates that all required headers are present
      */
     fun validateHeaders(headers: Map<String, String>): Boolean {
-        val requiredHeaders = listOf(
-            "Gov-Client-Connection-Method",
-            "Gov-Client-Device-ID",
-            "Gov-Client-User-IDs",
-            "Gov-Client-Timezone",
-            "Gov-Client-Local-IPs",
-            "Gov-Client-Local-IPs-Timestamp",
-            "Gov-Client-Screens",
-            "Gov-Client-Window-Size",
-            "Gov-Client-User-Agent",
-            "Gov-Vendor-Version",
-            "Gov-Vendor-Product-Name",
-            "Gov-Vendor-License-IDs"
-        )
-
         val missingHeaders = requiredHeaders.filter { !headers.containsKey(it) }
 
         if (missingHeaders.isNotEmpty()) {
