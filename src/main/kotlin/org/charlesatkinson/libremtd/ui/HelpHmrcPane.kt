@@ -66,7 +66,11 @@ class HelpHmrcPane : ScrollPane() {
                         "https://www.gov.uk/guidance/use-making-tax-digital-for-income-tax#end-of-period-statements",
                 "Final declaration" to
                         "https://www.gov.uk/guidance/use-making-tax-digital-for-income-tax#final-declaration",
-            ),
+                ),
+            "Foreign Tax Relief" to listOf(
+                "Relief for Foreign Tax Paid 2026 (HS263)" to
+                        "https://www.gov.uk/government/publications/calculating-foreign-tax-credit-relief-on-income-hs263-self-assessment-helpsheet/relief-for-foreign-tax-paid-2026-hs263",
+                ),
             "HMRC Developer Hub (API)" to listOf(
                 "MTD ITSA API documentation" to
                         "https://developer.service.hmrc.gov.uk/api-documentation/docs/api?filter=income-tax-mtd",
