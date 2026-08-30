@@ -64,124 +64,67 @@ class HelpPane(
         data class SectionLabel(val text: String) : SidebarItem()
     }
 
-    init {
-        val sidebarItems: List<SidebarItem> = listOf(
-            SidebarItem.TopicItem(Topic.Introduction),
-            SidebarItem.SectionLabel("OVERVIEW"),
-            SidebarItem.TopicItem(Topic.Dashboard),
-            SidebarItem.TopicItem(Topic.TaxSummary),
-            SidebarItem.SectionLabel("SUBMIT DATA"),
-            SidebarItem.TopicItem(Topic.DividendIncome),
-            SidebarItem.TopicItem(Topic.PropertyIncome),
-            SidebarItem.TopicItem(Topic.SavingsIncome),
-            SidebarItem.TopicItem(Topic.Expenses),
-            SidebarItem.TopicItem(Topic.Allowances),
-            SidebarItem.TopicItem(Topic.Submissions),
-            SidebarItem.SectionLabel("ACCOUNT"),
-            SidebarItem.TopicItem(Topic.HmrcConnect),
-            SidebarItem.TopicItem(Topic.Properties),
-            SidebarItem.TopicItem(Topic.Settings),
-            SidebarItem.SectionLabel("FILE"),
-            SidebarItem.TopicItem(Topic.ExportImport),
-            SidebarItem.SectionLabel(""),   // spacer before About
-            SidebarItem.TopicItem(Topic.About),
-        )
+    private val sidebarItems: List<SidebarItem> = listOf(
+        SidebarItem.TopicItem(Topic.Introduction),
+        SidebarItem.SectionLabel("OVERVIEW"),
+        SidebarItem.TopicItem(Topic.Dashboard),
+        SidebarItem.TopicItem(Topic.TaxSummary),
+        SidebarItem.SectionLabel("SUBMIT DATA"),
+        SidebarItem.TopicItem(Topic.DividendIncome),
+        SidebarItem.TopicItem(Topic.PropertyIncome),
+        SidebarItem.TopicItem(Topic.SavingsIncome),
+        SidebarItem.TopicItem(Topic.Expenses),
+        SidebarItem.TopicItem(Topic.Allowances),
+        SidebarItem.TopicItem(Topic.Submissions),
+        SidebarItem.SectionLabel("ACCOUNT"),
+        SidebarItem.TopicItem(Topic.HmrcConnect),
+        SidebarItem.TopicItem(Topic.Properties),
+        SidebarItem.TopicItem(Topic.Settings),
+        SidebarItem.SectionLabel("FILE"),
+        SidebarItem.TopicItem(Topic.ExportImport),
+        SidebarItem.SectionLabel(""),   // spacer before About
+        SidebarItem.TopicItem(Topic.About),
+    )
 
-        val topicList = ListView<SidebarItem>().apply {
-            items.addAll(sidebarItems)
-            prefWidth = 200.0
-            minWidth  = 160.0
-            cellFactory = javafx.util.Callback {
-                object : ListCell<SidebarItem>() {
-                    override fun updateItem(item: SidebarItem?, empty: Boolean) {
-                        super.updateItem(item, empty)
-                        text  = null
-                        style = ""
-                        graphic = null
-                        isDisable = false
+    private val topicList = ListView<SidebarItem>().apply {
+        items.addAll(sidebarItems)
+        prefWidth = 200.0
+        minWidth  = 160.0
+        cellFactory = javafx.util.Callback {
+            object : ListCell<SidebarItem>() {
+                override fun updateItem(item: SidebarItem?, empty: Boolean) {
+                    super.updateItem(item, empty)
+                    text  = null
+                    style = ""
+                    graphic = null
+                    isDisable = false
 
-                        if (empty || item == null) return
+                    if (empty || item == null) return
 
-                        when (item) {
-                            is SidebarItem.TopicItem -> {
-                                text = item.topic.label
-                            }
-                            is SidebarItem.SectionLabel -> {
-                                text      = item.text
-                                style     = "-fx-font-size: 10px; -fx-font-weight: bold; " +
-                                        "-fx-text-fill: #888888; -fx-padding: 8 0 2 4;"
-                                isDisable = true   // not selectable
-                            }
+                    when (item) {
+                        is SidebarItem.TopicItem -> {
+                            text = item.topic.label
+                        }
+                        is SidebarItem.SectionLabel -> {
+                            text      = item.text
+                            style     = "-fx-font-size: 10px; -fx-font-weight: bold; " +
+                                    "-fx-text-fill: #888888; -fx-padding: 8 0 2 4;"
+                            isDisable = true   // not selectable
                         }
                     }
                 }
             }
         }
+    }
 
-        val contentArea = ScrollPane().apply {
-            isFitToWidth = true
-            isFitToHeight = true
-            minHeight     = 0.0
-            padding = Insets(16.0)
-        }
+    private val contentArea = ScrollPane().apply {
+        isFitToWidth  = true
+        isFitToHeight = true
+        minHeight     = 0.0
+        padding = Insets(16.0)
+    }
 
-        fun showTopic(topic: Topic) {
-            contentArea.content = when (topic) {
-                Topic.Introduction  -> buildIntroductionPane()
-                Topic.Dashboard     -> buildPlaceholderPane("Dashboard",
-                    "The Dashboard gives an at-a-glance view of your estimated tax liability, " +
-                            "next submission deadline, and how many quarterly updates you have submitted.")
-                Topic.TaxSummary    -> buildPlaceholderPane("Tax Summary",
-                    "Tax Summary retrieves HMRC's latest calculation of your Income Tax and " +
-                            "National Insurance contributions for the selected tax year.")
-                Topic.DividendIncome -> buildPlaceholderPane("Income (dividends)",normalizeText(
-                    """
-                         Record dividend income for the tax year. Dividends are reported to HMRC annually.
-                         {NL}{NL}
-                         The pane has three sections. UK dividends from companies and funds covers cash
-                         dividends from UK companies and dividends from UK unit trusts and OEICs (shown on 
-                         fund platform tax certificates). UK dividends — special types covers stock dividends 
-                         (shares received instead of cash), redeemable shares, bonus issues of securities, and 
-                         close company loans written off — these arise in unusual circumstances. Foreign 
-                         dividends covers dividends from overseas companies and dividend income received 
-                         whilst abroad; each entry is per country and requires the taxable amount; other fields 
-                         are optional.
-                         {NL}{NL}
-                         Dividends within your annual dividend allowance are not taxable but must still be 
-                         reported. The allowance has been £500 since April 2024.
-                      """
-                    )
-                )
-                Topic.PropertyIncome -> buildPlaceholderPane("Income (property)",
-                    "Record rental income for each property and period.  " +
-                            "Furnished holiday lettings and standard residential lettings are both supported.")
-                Topic.SavingsIncome  -> buildPlaceholderPane("Income (savings)",
-                    "Record interest from bank accounts, building societies, and other savings sources.")
-                Topic.Expenses      -> buildPlaceholderPane("Expenses",
-                    "Record allowable property expenses such as repairs, insurance, and agent fees.  " +
-                            "The consolidated expenses scheme is not supported so all expenses are assigned " +
-                            "to a category.")
-                Topic.Allowances    -> buildPlaceholderPane("Allowances",
-                    "Claim the Property Income Allowance (up to £1,000) instead of actual expenses, " +
-                            "or record other allowances applicable to your situation.")
-                Topic.Submissions   -> buildPlaceholderPane("Submissions",
-                    "Submit quarterly updates, End of Period Statements (EOPS), and the Final " +
-                            "Declaration to HMRC via the MTD API.")
-                Topic.HmrcConnect   -> buildPlaceholderPane("HMRC Connect",
-                    "Authorise LibreMTD to communicate with HMRC using OAuth 2.0. " +
-                            "Your user name and password is never stored. " +
-                            "An access token is valid for four hours. For convenience it is kept in the database. " +
-                            "To remove a valid access token from the database, click the Disconnect button.")
-                Topic.Properties    -> buildPlaceholderPane("Properties",
-                    "Add and manage the rental properties you report under MTD ITSA.")
-                Topic.Settings      -> buildPlaceholderPane("Settings",
-                    "Configure your HMRC Client ID, Client Secret, and National Insurance number (NINO).")
-                Topic.ExportImport  -> buildExportImportPane()
-                Topic.About         -> buildAboutPane()
-            }
-            prefs.lastHelpTopic = topic.name
-        }
-
+    init {
         // Wire selection — skip section labels (they are disabled but guard anyway)
         topicList.selectionModel.selectedItemProperty().addListener { _, _, item ->
             if (item is SidebarItem.TopicItem) showTopic(item.topic)
@@ -190,10 +133,8 @@ class HelpPane(
         left   = topicList
         center = contentArea
 
-        // Fill the height the outer ScrollPane viewport offers.
         minHeight = 0.0
         maxHeight = Double.MAX_VALUE
-        VBox.setVgrow(this, javafx.scene.layout.Priority.ALWAYS)
 
         // Resolve initial topic: prefer constructor arg, else last saved, else Introduction
         val startTopic = initialTopic.takeIf { it != Topic.Introduction }
@@ -201,11 +142,82 @@ class HelpPane(
                 ?.let { name -> Topic.entries.firstOrNull { it.name == name } }
             ?: Topic.Introduction
 
-        val startIndex = sidebarItems.indexOfFirst {
-            it is SidebarItem.TopicItem && it.topic == startTopic
+        selectTopic(startTopic)
+    }
+
+    /**
+     * Switches the pane to show [topic], updating the sidebar selection to match.
+     * Public so a host such as HelpWindow can retarget an already-open HelpPane
+     * (e.g. bringing the window to front on a different topic) without rebuilding it.
+     */
+    fun selectTopic(topic: Topic) {
+        val index = sidebarItems.indexOfFirst {
+            it is SidebarItem.TopicItem && it.topic == topic
         }.takeIf { it >= 0 } ?: 0
 
-        topicList.selectionModel.select(startIndex)
+        if (topicList.selectionModel.selectedIndex == index) {
+            // Selection unchanged — the listener above won't fire, so show explicitly.
+            showTopic(topic)
+        } else {
+            topicList.selectionModel.select(index)
+        }
+    }
+
+    private fun showTopic(topic: Topic) {
+        contentArea.content = when (topic) {
+            Topic.Introduction  -> buildIntroductionPane()
+            Topic.Dashboard     -> buildPlaceholderPane("Dashboard",
+                "The Dashboard gives an at-a-glance view of your estimated tax liability, " +
+                        "next submission deadline, and how many quarterly updates you have submitted.")
+            Topic.TaxSummary    -> buildPlaceholderPane("Tax Summary",
+                "Tax Summary retrieves HMRC's latest calculation of your Income Tax and " +
+                        "National Insurance contributions for the selected tax year.")
+            Topic.DividendIncome -> buildPlaceholderPane("Income (dividends)",normalizeText(
+                """
+                     Record dividend income for the tax year. Dividends are reported to HMRC annually.
+                     {NL}{NL}
+                     The pane has three sections. UK dividends from companies and funds covers cash
+                     dividends from UK companies and dividends from UK unit trusts and OEICs (shown on 
+                     fund platform tax certificates). UK dividends — special types covers stock dividends 
+                     (shares received instead of cash), redeemable shares, bonus issues of securities, and 
+                     close company loans written off — these arise in unusual circumstances. Foreign 
+                     dividends covers dividends from overseas companies and dividend income received 
+                     whilst abroad; each entry is per country and requires the taxable amount; other fields 
+                     are optional.
+                     {NL}{NL}
+                     Dividends within your annual dividend allowance are not taxable but must still be 
+                     reported. The allowance has been £500 since April 2024.
+                  """
+            )
+            )
+            Topic.PropertyIncome -> buildPlaceholderPane("Income (property)",
+                "Record rental income for each property and period.  " +
+                        "Furnished holiday lettings and standard residential lettings are both supported.")
+            Topic.SavingsIncome  -> buildPlaceholderPane("Income (savings)",
+                "Record interest from bank accounts, building societies, and other savings sources.")
+            Topic.Expenses      -> buildPlaceholderPane("Expenses",
+                "Record allowable property expenses such as repairs, insurance, and agent fees.  " +
+                        "The consolidated expenses scheme is not supported so all expenses are assigned " +
+                        "to a category.")
+            Topic.Allowances    -> buildPlaceholderPane("Allowances",
+                "Claim the Property Income Allowance (up to £1,000) instead of actual expenses, " +
+                        "or record other allowances applicable to your situation.")
+            Topic.Submissions   -> buildPlaceholderPane("Submissions",
+                "Submit quarterly updates, End of Period Statements (EOPS), and the Final " +
+                        "Declaration to HMRC via the MTD API.")
+            Topic.HmrcConnect   -> buildPlaceholderPane("HMRC Connect",
+                "Authorise LibreMTD to communicate with HMRC using OAuth 2.0. " +
+                        "Your user name and password is never stored. " +
+                        "An access token is valid for four hours. For convenience it is kept in the database. " +
+                        "To remove a valid access token from the database, click the Disconnect button.")
+            Topic.Properties    -> buildPlaceholderPane("Properties",
+                "Add and manage the rental properties you report under MTD ITSA.")
+            Topic.Settings      -> buildPlaceholderPane("Settings",
+                "Configure your HMRC Client ID, Client Secret, and National Insurance number (NINO).")
+            Topic.ExportImport  -> buildExportImportPane()
+            Topic.About         -> buildAboutPane()
+        }
+        prefs.lastHelpTopic = topic.name
     }
 
     // ── Topic content builders ────────────────────────────────────────────────

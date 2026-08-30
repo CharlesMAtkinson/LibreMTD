@@ -18,6 +18,7 @@
 package org.charlesatkinson.libremtd.ui
 
 import javafx.application.Platform
+import javafx.beans.binding.Bindings
 import javafx.geometry.Insets
 import javafx.geometry.Pos
 import javafx.scene.control.*
@@ -56,13 +57,12 @@ enum class MtdConnectionStatus {
  * shorter form is needed to fit the sidebar width.
  */
 enum class NavDestination(val label: String, val navLabel: String = label) {
-    AboutLibreMTD("About LibreMTD"),
+    // AboutLibreMTD("About LibreMTD"),
     Dashboard("Dashboard"),
     DividendIncome("Income (dividends)", navLabel = "Dividends"),
     ExpensesPropertyUk("Expenses (property, UK)", navLabel = "UK property"),
     ExpensesPropertyForeign("Expenses (property, foreign)", navLabel = "Foreign property"),
     ExportSpreadsheet("Export Spreadsheet"),
-    Help("Help"),
     HmrcConnect("Connect"),
     HmrcLinks("HMRC Links"),
     ImportSpreadsheet("Import Spreadsheet"),
@@ -152,6 +152,13 @@ class MainWindow(
             styleClass.add("edge-to-edge-scroll")
         }
 
+        contentArea.minHeightProperty().bind(
+            Bindings.createDoubleBinding(
+                { scroll.viewportBounds.height },
+                scroll.viewportBoundsProperty()
+            )
+        )
+
         root.center = scroll
 
         navigateTo(NavDestination.Dashboard)
@@ -196,7 +203,7 @@ class MainWindow(
         val helpMenu = Menu("Help").apply {
             items.addAll(
                 MenuItem("LibreMTD help").apply {
-                    setOnAction { navigateTo(NavDestination.Help) }
+                    setOnAction { HelpWindow.show(user.id, HelpPane.Topic.Introduction) }
                 },
                 MenuItem("HMRC links").apply {
                     setOnAction { navigateTo(NavDestination.HmrcLinks) }
@@ -300,9 +307,10 @@ class MainWindow(
     }
 
     private fun buildFreshPane(dest: NavDestination): javafx.scene.Node = when (dest) {
-        NavDestination.AboutLibreMTD          -> HelpPane(
-            userId         = user.id,
-        )
+        // NavDestination.AboutLibreMTD          -> HelpPane(
+        //    userId         = user.id,
+        //    initialTopic   = HelpPane.Topic.About,
+        // )
         NavDestination.Dashboard              -> DashboardPane().root
         NavDestination.DividendIncome         -> DividendIncomePane(
             scope          = scope,
@@ -324,7 +332,6 @@ class MainWindow(
             userId         = user.id,
             onStatusChange = { msg -> setStatus(msg) },
         ).root
-        NavDestination.Help                   -> HelpPane(userId = user.id)
         NavDestination.HmrcConnect            -> ConnectPane(
             scope              = scope,
             userId             = user.id,

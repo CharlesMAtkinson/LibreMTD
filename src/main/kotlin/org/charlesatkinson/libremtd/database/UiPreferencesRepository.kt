@@ -42,6 +42,10 @@ object UiPreferencesRepository {
     const val KEY_OAUTH_WIN_WIDTH   = "oauth.window.width"
     const val KEY_OAUTH_WIN_X       = "oauth.window.x"
     const val KEY_OAUTH_WIN_Y       = "oauth.window.y"
+    const val KEY_HELP_WIN_HEIGHT   = "help.window.height"
+    const val KEY_HELP_WIN_WIDTH    = "help.window.width"
+    const val KEY_HELP_WIN_X        = "help.window.x"
+    const val KEY_HELP_WIN_Y        = "help.window.y"
 
     // ── Core get / set ────────────────────────────────────────────────────────
 

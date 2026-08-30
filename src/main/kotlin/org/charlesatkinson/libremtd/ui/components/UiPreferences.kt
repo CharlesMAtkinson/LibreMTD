@@ -90,4 +90,20 @@ class UiPreferences(private val userId: Int) {
     var oauthWindowHeight: Double?
         get() = UiPreferencesRepository.getDouble(userId, UiPreferencesRepository.KEY_OAUTH_WIN_HEIGHT)
         set(value) = UiPreferencesRepository.setDouble(userId, UiPreferencesRepository.KEY_OAUTH_WIN_HEIGHT, value)
+
+    var helpWindowX: Double?
+        get() = UiPreferencesRepository.getDouble(userId, UiPreferencesRepository.KEY_HELP_WIN_X)
+        set(value) = UiPreferencesRepository.setDouble(userId, UiPreferencesRepository.KEY_HELP_WIN_X, value)
+
+    var helpWindowY: Double?
+        get() = UiPreferencesRepository.getDouble(userId, UiPreferencesRepository.KEY_HELP_WIN_Y)
+        set(value) = UiPreferencesRepository.setDouble(userId, UiPreferencesRepository.KEY_HELP_WIN_Y, value)
+
+    var helpWindowWidth: Double?
+        get() = UiPreferencesRepository.getDouble(userId, UiPreferencesRepository.KEY_HELP_WIN_WIDTH)
+        set(value) = UiPreferencesRepository.setDouble(userId, UiPreferencesRepository.KEY_HELP_WIN_WIDTH, value)
+
+    var helpWindowHeight: Double?
+        get() = UiPreferencesRepository.getDouble(userId, UiPreferencesRepository.KEY_HELP_WIN_HEIGHT)
+        set(value) = UiPreferencesRepository.setDouble(userId, UiPreferencesRepository.KEY_HELP_WIN_HEIGHT, value)
 }
