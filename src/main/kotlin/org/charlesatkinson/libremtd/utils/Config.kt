@@ -78,7 +78,11 @@ object Config {
     const val HMRC_SANDBOX_URL    = "https://test-api.service.hmrc.gov.uk"
     const val HMRC_PRODUCTION_URL = "https://api.service.hmrc.gov.uk"
 
-    // OAuth URLs differ from the API base — separate subdomain for the auth UI
+    // The OAuth authorise/token endpoints (/oauth/authorize, /oauth/token) live
+    // on the same host as the rest of the API — there is no separate auth
+    // subdomain — so these constants are deliberately identical to the ones
+    // above. Kept as separate constants so callers express intent clearly and
+    // so a future HMRC change to split the hosts only needs a change here.
     const val HMRC_SANDBOX_OAUTH_URL    = "https://test-api.service.hmrc.gov.uk"
     const val HMRC_PRODUCTION_OAUTH_URL = "https://api.service.hmrc.gov.uk"
 
