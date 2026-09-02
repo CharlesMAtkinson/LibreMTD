@@ -177,6 +177,17 @@ object IncomePropertyForeignRepository {
         }
     }
 
+    /** See ExpensePropertyForeignRepository.existsForProperty for rationale. */
+    fun existsForProperty(propertyId: Int): Boolean {
+        return transaction {
+            IncomePropertyForeignEntries
+                .selectAll()
+                .where { IncomePropertyForeignEntries.propertyId eq propertyId }
+                .limit(1)
+                .any()
+        }
+    }
+
     private fun ResultRow.toIncomePropertyForeignEntry() = IncomePropertyForeignEntry(
         id              = this[IncomePropertyForeignEntries.id],
         periodId        = this[IncomePropertyForeignEntries.periodId],

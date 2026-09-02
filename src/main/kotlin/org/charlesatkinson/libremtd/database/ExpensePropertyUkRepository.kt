@@ -156,6 +156,17 @@ object ExpensePropertyUkRepository {
         }
     }
 
+    /** See ExpensePropertyForeignRepository.existsForProperty for rationale. */
+    fun existsForProperty(propertyId: Int): Boolean {
+        return transaction {
+            ExpensePropertyUkEntries
+                .selectAll()
+                .where { ExpensePropertyUkEntries.propertyId eq propertyId }
+                .limit(1)
+                .any()
+        }
+    }
+
     private fun ResultRow.toExpensePropertyUkEntry() = ExpensePropertyUkEntry(
         id              = this[ExpensePropertyUkEntries.id],
         periodId        = this[ExpensePropertyUkEntries.periodId],

@@ -29,8 +29,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.javafx.JavaFx
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.charlesatkinson.libremtd.database.ExpensePropertyForeignRepository
+import org.charlesatkinson.libremtd.database.ExpensePropertyUkRepository
 import org.charlesatkinson.libremtd.database.ForeignPropertyElection
 import org.charlesatkinson.libremtd.database.ForeignPropertyElectionRepository
+import org.charlesatkinson.libremtd.database.IncomePropertyForeignRepository
+import org.charlesatkinson.libremtd.database.IncomePropertyUkRepository
 import org.charlesatkinson.libremtd.database.Property
 import org.charlesatkinson.libremtd.database.PropertyRepository
 import org.charlesatkinson.libremtd.database.PropertyType
@@ -526,13 +530,14 @@ class PropertiesPane(
      * no longer editable here).
      *
      * Deliberately NOT bounded by when the property was registered with
-     * HMRC or added locally: hmrcRegisteredTaxYear records when HMRC
-     * registration happened, not when the letting started — and 2025-26 has
-     * no HMRC registration endpoint at all, so a property first let in
-     * 2025-26 but only registered with HMRC once 2026-27 became available
-     * still needs FTCR trackable for 2025-26. The trade-off is that a
-     * property will also show FTCR options for years before it existed at
-     * all; harmless, since there's simply nothing to submit for those years.
+     * HMRC or added locally, and NOT bounded by whether the property has
+     * since been ended: hmrcRegisteredTaxYear records when HMRC registration
+     * happened, not when the letting started; ending a property only tells
+     * HMRC/LibreMTD the letting has stopped from a given date, it doesn't
+     * retroactively close tax years that still need FTCR reviewed. The
+     * trade-off is that a property will also show FTCR options for years
+     * before it existed at all; harmless, since there's simply nothing to
+     * submit for those years.
      */
     private fun openTaxYearsFor(property: Property): List<String> {
         return availableTaxYears()
@@ -704,6 +709,20 @@ class PropertiesPane(
         }
     }
 
+    /** Greys out an entire row when the property has been ended, so ended
+     *  properties stay visible and selectable but are visually distinct
+     *  from active ones. */
+    private fun applyEndedRowStyling(table: TableView<Property>) {
+        table.setRowFactory {
+            object : TableRow<Property>() {
+                override fun updateItem(item: Property?, empty: Boolean) {
+                    super.updateItem(item, empty)
+                    style = if (!empty && item?.endedAt != null) "-fx-opacity: 0.55;" else ""
+                }
+            }
+        }
+    }
+
     private fun buildUkPropertiesTable(): VBox {
         val table = TableView<Property>(ukProperties).apply {
             prefHeight  = 220.0
@@ -724,10 +743,17 @@ class PropertiesPane(
                     setCellValueFactory { SimpleStringProperty(it.value.createdAt.take(10)) }
                     setCellFactory { centeredCell() }
                 },
+                TableColumn<Property, String>("Ended").apply {
+                    prefWidth = 120.0; maxWidth = 140.0; minWidth = 100.0
+                    setCellValueFactory { SimpleStringProperty(it.value.endedAt?.take(10) ?: "") }
+                    setCellFactory { centeredCell() }
+                },
             )
         }
+        applyEndedRowStyling(table)
 
-        val deleteBtn = buildDeleteButton(table) { loadProperties() }
+        val endBtn = buildEndButton(table) { loadProperties() }
+        val removeBtn = buildRemoveButton(table) { loadProperties() }
 
         return VBox(8.0).apply {
             padding = Insets(12.0, 16.0, 12.0, 16.0)
@@ -737,7 +763,7 @@ class PropertiesPane(
                 wrappingLabel("Your UK properties").apply { style = "-fx-font-weight: bold;" },
                 Separator(),
                 table,
-                deleteBtn,
+                HBox(10.0, endBtn, removeBtn),
             )
         }
     }
@@ -775,6 +801,11 @@ class PropertiesPane(
                     setCellValueFactory { SimpleStringProperty(it.value.hmrcRegisteredAt?.take(10) ?: "") }
                     setCellFactory { centeredCell() }
                 },
+                TableColumn<Property, String>("Ended").apply {
+                    prefWidth = 120.0; maxWidth = 140.0; minWidth = 100.0
+                    setCellValueFactory { SimpleStringProperty(it.value.endedAt?.take(10) ?: "") }
+                    setCellFactory { centeredCell() }
+                },
                 TableColumn<Property, String>("FTCR").apply {
                     prefWidth = 160.0; maxWidth = 220.0; minWidth = 120.0
                     setCellValueFactory { SimpleStringProperty(ftcrSummaries[it.value.id] ?: "…") }
@@ -782,6 +813,7 @@ class PropertiesPane(
                 },
             )
         }
+        applyEndedRowStyling(table)
 
         registerHmrcBtn = Button("Register with HMRC").apply {
             styleClass.add("primary-action-button")
@@ -791,6 +823,7 @@ class PropertiesPane(
                 when {
                     selected == null -> Dialogs.showError("Please select a property to register.")
                     selected.hmrcPropertyId != null -> Dialogs.showError("This property is already registered with HMRC.")
+                    selected.endedAt != null -> Dialogs.showError("This property has already ended, so it can't be registered with HMRC.")
                     else -> handleRegisterWithHmrc(selected)
                 }
             }
@@ -810,11 +843,12 @@ class PropertiesPane(
         }
 
         table.selectionModel.selectedItemProperty().addListener { _, _, selected ->
-            registerHmrcBtn.isDisable = selected == null || selected.hmrcPropertyId != null
+            registerHmrcBtn.isDisable = selected == null || selected.hmrcPropertyId != null || selected.endedAt != null
             ftcrBtn.isDisable = selected == null
         }
 
-        val deleteBtn = buildDeleteButton(table) { loadProperties() }
+        val endBtn = buildEndButton(table) { loadProperties() }
+        val removeBtn = buildRemoveButton(table) { loadProperties() }
 
         return VBox(8.0).apply {
             padding = Insets(12.0, 16.0, 12.0, 16.0)
@@ -824,59 +858,64 @@ class PropertiesPane(
                 wrappingLabel("Your foreign properties").apply { style = "-fx-font-weight: bold;" },
                 Separator(),
                 table,
-                HBox(10.0, registerHmrcBtn, ftcrBtn, deleteBtn),
+                HBox(10.0, registerHmrcBtn, ftcrBtn, endBtn, removeBtn),
             )
         }
     }
 
-    // ── Delete ──────────────────────────────────────────────────────────
+    // ── End letting ─────────────────────────────────────────────────────
 
-    private fun buildDeleteButton(table: TableView<Property>, onDeleted: () -> Unit): Button {
-        return Button("Delete selected").apply {
+    private fun buildEndButton(table: TableView<Property>, onEnded: () -> Unit): Button {
+        return Button("End letting…").apply {
             styleClass.add("primary-action-button")
             setOnAction {
                 val selected = table.selectionModel.selectedItem
-                if (selected == null) {
-                    Dialogs.showError("Please select a property to delete.")
-                    return@setOnAction
-                }
-
-                if (selected.propertyType == PropertyType.FOREIGN && selected.hmrcPropertyId != null) {
-                    handleDeleteRegisteredForeignProperty(selected, onDeleted)
-                } else {
-                    confirmAndSoftDelete(selected, onDeleted)
+                when {
+                    selected == null -> {
+                        Dialogs.showError("Please select a property to end.")
+                    }
+                    selected.endedAt != null -> {
+                        Dialogs.showError("This property has already ended.")
+                    }
+                    selected.propertyType == PropertyType.FOREIGN && selected.hmrcPropertyId != null -> {
+                        handleEndRegisteredForeignProperty(selected, onEnded)
+                    }
+                    else -> {
+                        confirmAndEnd(selected, onEnded)
+                    }
                 }
             }
         }
     }
 
-    private fun confirmAndSoftDelete(selected: Property, onDeleted: () -> Unit) {
+    private fun confirmAndEnd(selected: Property, onEnded: () -> Unit) {
         val confirmed = Alert(Alert.AlertType.CONFIRMATION).apply {
-            title       = "Delete property"
-            headerText  = "Delete ${selected.address}?"
-            contentText = "This will mark the property as deleted. Existing income " +
-                    "and expense entries for this property are retained."
+            title       = "End letting"
+            headerText  = "End the letting of ${selected.address}?"
+            contentText = "This will mark the property as ended. Existing income and expense " +
+                    "entries for this property are retained and remain available for review " +
+                    "and amendment until you make your Final Declaration."
         }.showAndWait().map { it.buttonData == ButtonBar.ButtonData.OK_DONE }.orElse(false)
 
         if (!confirmed) return
 
         scope.launch(Dispatchers.IO) {
-            PropertyRepository.softDelete(selected.id)
+            PropertyRepository.end(selected.id)
             withContext(Dispatchers.JavaFx) {
-                onDeleted()
-                onStatusChange("Property deleted")
+                onEnded()
+                onStatusChange("Property ended")
             }
         }
     }
 
     /**
-     * Deleting a foreign property that's registered with HMRC must first end
+     * Ending a foreign property that's registered with HMRC must first end
      * it there via Update Foreign Property Details (there's no separate
      * delete endpoint) — otherwise the record stays "active" on HMRC's side
-     * while LibreMTD thinks it's gone. If the HMRC call fails, we deliberately
-     * do NOT soft-delete locally, to keep the two in sync.
+     * while LibreMTD thinks it's ended. If the HMRC call fails, we deliberately
+     * do NOT mark it ended locally, to keep the two in sync.
      */
-    private fun handleDeleteRegisteredForeignProperty(selected: Property, onDeleted: () -> Unit) {
+    private fun handleEndRegisteredForeignProperty(selected: Property, onEnded: () -> Unit) {
         val taxYear = selected.hmrcRegisteredTaxYear
         if (taxYear.isNullOrBlank()) {
             Dialogs.showError(
@@ -922,17 +961,17 @@ class PropertiesPane(
 
             when (result) {
                 is ApiResult.Success -> {
-                    PropertyRepository.softDelete(selected.id)
+                    PropertyRepository.end(selected.id)
                     withContext(Dispatchers.JavaFx) {
-                        onDeleted()
-                        onStatusChange("Foreign property ended with HMRC and deleted ✓")
+                        onEnded()
+                        onStatusChange("Foreign property ended with HMRC and locally ✓")
                     }
                 }
                 is ApiResult.Failure -> {
                     withContext(Dispatchers.JavaFx) {
                         Dialogs.showError(
-                            "Could not end the property with HMRC, so it has not been deleted " +
-                                    "locally either — this keeps LibreMTD and HMRC in sync.\n\n${result.message}",
+                            "Could not end the property with HMRC, so it has not been marked as " +
+                                    "ended locally either — this keeps LibreMTD and HMRC in sync.\n\n${result.message}",
                             title = "HMRC update failed",
                         )
                     }
@@ -961,7 +1000,7 @@ class PropertiesPane(
 
         val dialog = Dialog<ForeignPropertyEndDetails?>().apply {
             title = "End foreign property with HMRC"
-            headerText = "Ending \"$address\" with HMRC before deleting it locally"
+            headerText = "Ending \"$address\" with HMRC before marking it as ended locally"
             dialogPane.content = grid
             dialogPane.buttonTypes.addAll(ButtonType.OK, ButtonType.CANCEL)
             setResultConverter { button ->
@@ -977,6 +1016,108 @@ class PropertiesPane(
         return dialog.showAndWait().orElse(null)
     }
 
+    // ── Remove ──────────────────────────────────────────────────────────
+
+    /**
+     * True only if the property has never had an income or expense entry
+     * recorded against it (checking full history, not just current rows —
+     * even a superseded entry is evidence of real use). FTCR election rows
+     * are deliberately not checked; see ForeignPropertyElectionRepository's
+     * "Do we care about this one?" discussion — every foreign property gets
+     * an election row automatically on creation, so treating that as "real
+     * use" would mean no foreign property could ever be removed.
+     */
+    private fun hasNoEntries(property: Property): Boolean {
+        return when (property.propertyType) {
+            PropertyType.UK ->
+                !IncomePropertyUkRepository.existsForProperty(property.id) &&
+                        !ExpensePropertyUkRepository.existsForProperty(property.id)
+            PropertyType.FOREIGN ->
+                !IncomePropertyForeignRepository.existsForProperty(property.id) &&
+                        !ExpensePropertyForeignRepository.existsForProperty(property.id)
+        }
+    }
+
+    /**
+     * Builds the Remove button and wires it to the table's selection so its
+     * enabled state and colour reflect whether the *currently selected*
+     * property can actually be removed — rather than always looking the
+     * same and only revealing whether removal is possible once clicked.
+     *
+     * The check needs a database read, so it's done asynchronously on
+     * selection change; [checkToken] guards against a stale check landing
+     * after the user has since selected something else.
+     */
+    private fun buildRemoveButton(table: TableView<Property>, onRemoved: () -> Unit): Button {
+        val button = Button("Remove").apply {
+            isDisable = true
+        }
+
+        var checkToken = 0
+
+        table.selectionModel.selectedItemProperty().addListener { _, _, selected ->
+            checkToken++
+            val thisToken = checkToken
+
+            if (selected == null) {
+                button.isDisable = true
+                button.styleClass.remove("primary-action-button")
+                return@addListener
+            }
+
+            // Disabled and un-highlighted while we check — avoids a flash
+            // of "removable" styling carried over from the previous selection.
+            button.isDisable = true
+            button.styleClass.remove("primary-action-button")
+
+            scope.launch(Dispatchers.IO) {
+                val removable = hasNoEntries(selected)
+                withContext(Dispatchers.JavaFx) {
+                    // Selection may have changed again while the check was
+                    // running — ignore a result that's no longer current.
+                    if (thisToken != checkToken) return@withContext
+                    button.isDisable = !removable
+                    if (removable) {
+                        if (!button.styleClass.contains("primary-action-button")) {
+                            button.styleClass.add("primary-action-button")
+                        }
+                    } else {
+                        button.styleClass.remove("primary-action-button")
+                    }
+                }
+            }
+        }
+
+        button.setOnAction {
+            val selected = table.selectionModel.selectedItem
+            // The button is only enabled once hasNoEntries() has already
+            // been confirmed true for this selection, via the listener
+            // above — so no need to repeat that check here.
+            if (selected != null) confirmAndRemove(selected, onRemoved)
+        }
+
+        return button
+    }
+
+    private fun confirmAndRemove(selected: Property, onRemoved: () -> Unit) {
+        val confirmed = Alert(Alert.AlertType.CONFIRMATION).apply {
+            title       = "Remove property"
+            headerText  = "Permanently remove ${selected.address}?"
+            contentText = "This property has no income or expense entries recorded, so it will " +
+                    "be deleted completely rather than just ended. This cannot be undone."
+        }.showAndWait().map { it.buttonData == ButtonBar.ButtonData.OK_DONE }.orElse(false)
+
+        if (!confirmed) return
+
+        scope.launch(Dispatchers.IO) {
+            PropertyRepository.remove(selected.id)
+            withContext(Dispatchers.JavaFx) {
+                onRemoved()
+                onStatusChange("Property removed")
+            }
+        }
+    }
+
     // ── Load / clear ────────────────────────────────────────────────────
 
     private fun loadProperties() {
@@ -984,9 +1125,16 @@ class PropertiesPane(
             val loaded = PropertyRepository.findByUser(userId)
             val foreign = loaded.filter { it.propertyType == PropertyType.FOREIGN }
             val summaries = foreign.associate { it.id to ftcrSummaryFor(it) }
+            // Active properties first, then ended ones, each alphabetically —
+            // ended properties stay visible for review rather than
+            // disappearing, but shouldn't clutter the top of the table.
+            val sortedUk = loaded.filter { it.propertyType == PropertyType.UK }
+                .sortedWith(compareBy({ it.endedAt != null }, { it.address }))
+            val sortedForeign = foreign
+                .sortedWith(compareBy({ it.endedAt != null }, { it.address }))
             withContext(Dispatchers.JavaFx) {
-                ukProperties.setAll(loaded.filter { it.propertyType == PropertyType.UK })
-                foreignProperties.setAll(foreign)
+                ukProperties.setAll(sortedUk)
+                foreignProperties.setAll(sortedForeign)
                 ftcrSummaries.clear()
                 ftcrSummaries.putAll(summaries)
                 onStatusChange("${loaded.size} property/properties loaded")

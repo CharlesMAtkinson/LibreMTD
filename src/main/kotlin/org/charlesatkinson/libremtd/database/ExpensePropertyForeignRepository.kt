@@ -177,6 +177,23 @@ object ExpensePropertyForeignRepository {
         }
     }
 
+    /**
+     * True if this property has ever had an expense entry recorded against
+     * it — including superseded (edited/deleted) ones, since even a
+     * corrected entry is evidence the property has real financial history
+     * and should not be permanently removed. Used to decide whether
+     * PropertyRepository.remove() is safe to offer for a given property.
+     */
+    fun existsForProperty(propertyId: Int): Boolean {
+        return transaction {
+            ExpensePropertyForeignEntries
+                .selectAll()
+                .where { ExpensePropertyForeignEntries.propertyId eq propertyId }
+                .limit(1)
+                .any()
+        }
+    }
+
     private fun ResultRow.toExpensePropertyForeignEntry() = ExpensePropertyForeignEntry(
         id              = this[ExpensePropertyForeignEntries.id],
         periodId        = this[ExpensePropertyForeignEntries.periodId],

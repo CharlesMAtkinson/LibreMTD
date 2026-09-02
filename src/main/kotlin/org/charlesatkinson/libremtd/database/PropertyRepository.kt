@@ -17,8 +17,10 @@
 
 package org.charlesatkinson.libremtd.database
 
+import org.charlesatkinson.libremtd.database.tables.ForeignPropertyElections
 import org.charlesatkinson.libremtd.database.tables.Properties
 import org.jetbrains.exposed.sql.*
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.transactions.transaction
 import java.time.LocalDateTime
 
@@ -35,6 +37,7 @@ data class Property(
     val hmrcRegisteredAt: String?,
     val hmrcRegisteredTaxYear: String?,
     val createdAt: String,
+    val endedAt: String?,
     val supersededAt: String?,
 )
 
@@ -66,6 +69,7 @@ object PropertyRepository {
                 it[Properties.hmrcRegisteredAt]      = null
                 it[Properties.hmrcRegisteredTaxYear] = null
                 it[Properties.createdAt]             = createdAt
+                it[Properties.endedAt]               = null
             } get Properties.id
 
             Property(
@@ -79,11 +83,18 @@ object PropertyRepository {
                 hmrcRegisteredAt = null,
                 hmrcRegisteredTaxYear = null,
                 createdAt = createdAt,
+                endedAt = null,
                 supersededAt = null,
             )
         }
     }
 
+    /**
+     * Returns every property for [userId] that has not been removed —
+     * including ended ones, so they remain available for review and for
+     * amending entries in tax years not yet Final Declared. Callers that
+     * want to distinguish active from ended should check [Property.endedAt].
+     */
     fun findByUser(userId: Int): List<Property> {
         return transaction {
             Properties
@@ -101,6 +112,7 @@ object PropertyRepository {
                         hmrcRegisteredAt       = row[Properties.hmrcRegisteredAt],
                         hmrcRegisteredTaxYear  = row[Properties.hmrcRegisteredTaxYear],
                         createdAt              = row[Properties.createdAt],
+                        endedAt                = row[Properties.endedAt],
                         supersededAt           = row[Properties.supersededAt],
                     )
                 }
@@ -128,11 +140,37 @@ object PropertyRepository {
         }
     }
 
-    fun softDelete(id: Int) {
+    /**
+     * Marks a property's letting as ended. This is not deletion: the
+     * property and all its existing income/expense entries remain in place
+     * and remain returned by [findByUser], so they stay available for
+     * review and for amendment up to Final Declaration.
+     */
+    fun end(id: Int) {
         transaction {
             Properties.update({ Properties.id eq id }) {
-                it[supersededAt] = java.time.Instant.now().toString()
+                it[endedAt] = LocalDateTime.now().toString()
             }
+        }
+    }
+
+    /**
+     * Permanently removes a property. Callers MUST check that the property
+     * has no income or expense entries before calling this — see the
+     * various *Repository.existsForProperty() functions — since
+     * PropertyRepository deliberately doesn't depend on those repositories
+     * itself, to avoid a circular dependency between database classes.
+     *
+     * Any ForeignPropertyElections rows for the property ARE deleted here
+     * regardless, since — unlike income/expense entries — they're recorded
+     * automatically on every foreign property (see ForeignPropertyElectionRepository
+     * doc comment) and so don't represent genuine usage that should block
+     * removal; they're simply cleaned up as part of it.
+     */
+    fun remove(id: Int) {
+        transaction {
+            ForeignPropertyElections.deleteWhere { ForeignPropertyElections.propertyId eq id }
+            Properties.deleteWhere { Properties.id eq id }
         }
     }
 }

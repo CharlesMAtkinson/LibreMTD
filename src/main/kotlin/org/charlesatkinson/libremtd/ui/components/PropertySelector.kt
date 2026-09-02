@@ -35,6 +35,7 @@ class PropertySelector(
     val root: HBox
 
     private val propertyPicker = ComboBox<Property>()
+    private lateinit var endedHintLabel: Label
 
     var selectedProperty: Property? = null
         private set
@@ -53,10 +54,16 @@ class PropertySelector(
             setOnAction {
                 selectedProperty = value
                 prefs.lastPropertyId = value?.id
+                updateEndedHint(value)
                 onSelectionChanged(value)
             }
         }
         HBox.setHgrow(propertyPicker, Priority.ALWAYS)
+
+        endedHintLabel = hintLabel("").apply {
+            isVisible = false
+            isManaged = false
+        }
 
         return HBox(12.0).apply {
             alignment = Pos.CENTER_LEFT
@@ -64,13 +71,30 @@ class PropertySelector(
             children.addAll(
                 wrappingLabel("Property:").apply { minWidth = 70.0 },
                 propertyPicker,
+                endedHintLabel,
             )
+        }
+    }
+
+    private fun updateEndedHint(property: Property?) {
+        val endedAt = property?.endedAt
+        if (endedAt == null) {
+            endedHintLabel.isVisible = false
+            endedHintLabel.isManaged = false
+        } else {
+            endedHintLabel.text = "Ended ${endedAt.take(10)} — entries remain available for review and amendment."
+            endedHintLabel.isVisible = true
+            endedHintLabel.isManaged = true
         }
     }
 
     private fun loadProperties() {
         val properties = PropertyRepository.findByUser(userId)
             .let { all -> if (propertyType != null) all.filter { it.propertyType == propertyType } else all }
+            // Active properties first, then ended ones, each alphabetically —
+            // ended properties stay selectable for review rather than
+            // disappearing, but shouldn't clutter the top of the list.
+            .sortedWith(compareBy({ it.endedAt != null }, { it.address }))
         propertyPicker.items.setAll(properties)
 
         when {
@@ -78,6 +102,7 @@ class PropertySelector(
                 propertyPicker.value     = properties.first()
                 propertyPicker.isDisable = true
                 selectedProperty         = properties.first()
+                updateEndedHint(properties.first())
                 onSelectionChanged(properties.first())
             }
             properties.size > 1 -> {
@@ -86,6 +111,7 @@ class PropertySelector(
                 if (restored != null) {
                     propertyPicker.value = restored
                     selectedProperty     = restored
+                    updateEndedHint(restored)
                     onSelectionChanged(restored)
                 }
             }
@@ -95,13 +121,21 @@ class PropertySelector(
     private fun propertyCell() = object : ListCell<Property>() {
         override fun updateItem(item: Property?, empty: Boolean) {
             super.updateItem(item, empty)
-            text = if (empty || item == null) null else {
-                val locationSuffix = when (item.propertyType) {
-                    PropertyType.UK      -> item.postcode
-                    PropertyType.FOREIGN -> item.countryCode
-                }
-                "${item.address}, $locationSuffix"
+            if (empty || item == null) {
+                text = null
+                style = ""
+                return
             }
+            val locationSuffix = when (item.propertyType) {
+                PropertyType.UK      -> item.postcode
+                PropertyType.FOREIGN -> item.countryCode
+            }
+            text = if (item.endedAt != null)
+                "${item.address}, $locationSuffix (ended)"
+            else
+                "${item.address}, $locationSuffix"
+            style = if (item.endedAt != null) "-fx-opacity: 0.6;" else ""
         }
     }
 }
+

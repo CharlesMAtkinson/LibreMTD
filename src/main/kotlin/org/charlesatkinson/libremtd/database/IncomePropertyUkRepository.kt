@@ -175,6 +175,23 @@ object IncomePropertyUkRepository {
         }
     }
 
+    /**
+     * True if this property has ever had an income entry recorded against
+     * it — including superseded (edited/deleted) ones, since even a
+     * corrected entry is evidence of real financial history. Used by
+     * PropertiesPane to decide whether PropertyRepository.remove() is safe
+     * to offer for a given property.
+     */
+    fun existsForProperty(propertyId: Int): Boolean {
+        return transaction {
+            IncomePropertyUkEntries
+                .selectAll()
+                .where { IncomePropertyUkEntries.propertyId eq propertyId }
+                .limit(1)
+                .any()
+        }
+    }
+
     private fun ResultRow.toIncomePropertyUkEntry() = IncomePropertyUkEntry(
         id              = this[IncomePropertyUkEntries.id],
         periodId        = this[IncomePropertyUkEntries.periodId],

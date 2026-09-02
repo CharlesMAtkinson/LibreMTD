@@ -42,10 +42,17 @@ object Properties : Table("properties") {
 
     val createdAt             = text("created_at")
 
-    // NOTE: was previously declared without .nullable() even though create()
-    // never sets it and findByUser() filters on Properties.supersededAt.isNull().
-    // Added .nullable() here so the Exposed declaration matches how the
-    // column is actually used; this doesn't require a DB migration.
+    // Set when the user ends a property's letting. The property, and all
+    // its existing income/expense entries, remain fully visible — this is
+    // deliberately not the same thing as removal. See PropertyRepository.end().
+    val endedAt               = text("ended_at").nullable()
+
+    // Legacy "soft delete" marker. New code must never set this — genuine
+    // removal is now a hard DELETE via PropertyRepository.remove(), and
+    // ending a letting is recorded in endedAt instead. Retained (rather than
+    // dropped) purely so the column still exists for any row a future
+    // migration might need to inspect; findByUser() keeps filtering on it
+    // as a defensive belt-and-braces check.
     val supersededAt          = text("superseded_at").nullable()
 
     override val primaryKey = PrimaryKey(id)
