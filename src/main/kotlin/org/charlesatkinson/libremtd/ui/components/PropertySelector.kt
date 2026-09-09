@@ -108,12 +108,22 @@ class PropertySelector(
             properties.size > 1 -> {
                 val lastId = prefs.lastPropertyId
                 val restored = if (lastId != null) properties.firstOrNull { it.id == lastId } else null
-                if (restored != null) {
-                    propertyPicker.value = restored
-                    selectedProperty     = restored
-                    updateEndedHint(restored)
-                    onSelectionChanged(restored)
-                }
+                // Fall back to the first property (active-first, alphabetical
+                // — see the sort above) when there is no stored preference,
+                // or the stored one no longer exists (e.g. removed). Without
+                // this, a user with several properties of a type and no
+                // prior selection sees a blank picker and no data — in
+                // particular no Final Declaration banner even when the
+                // relevant year is locked, since nothing is selected for the
+                // pane to check. Mirrors PeriodSelector/TaxYearSelector,
+                // which both already fall back to a sensible default rather
+                // than leaving the picker empty.
+                val toSelect = restored ?: properties.first()
+                propertyPicker.value = toSelect
+                selectedProperty     = toSelect
+                prefs.lastPropertyId = toSelect.id
+                updateEndedHint(toSelect)
+                onSelectionChanged(toSelect)
             }
         }
     }
@@ -138,4 +148,3 @@ class PropertySelector(
         }
     }
 }
-

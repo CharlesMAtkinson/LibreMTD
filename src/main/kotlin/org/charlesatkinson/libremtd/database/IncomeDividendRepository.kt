@@ -17,6 +17,7 @@
 
 package org.charlesatkinson.libremtd.database
 
+import org.charlesatkinson.libremtd.database.components.FinalDeclarationGuard
 import org.charlesatkinson.libremtd.database.tables.IncomeDividendEntries
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.transactions.transaction
@@ -50,6 +51,16 @@ object IncomeDividendRepository {
         }
 
     fun delete(id: Int) = transaction {
+        val row = IncomeDividendEntries
+            .selectAll()
+            .where { IncomeDividendEntries.id eq id }
+            .singleOrNull() ?: return@transaction
+
+        FinalDeclarationGuard.requireNotFinalDeclared(
+            row[IncomeDividendEntries.userId],
+            row[IncomeDividendEntries.taxYear],
+        )
+
         IncomeDividendEntries.update({ IncomeDividendEntries.id eq id }) {
             it[supersededAt] = LocalDateTime.now().toString()
         }
@@ -65,6 +76,8 @@ object IncomeDividendRepository {
         description: String,
         transactionDate: String,
     ): IncomeDividendEntry = transaction {
+        FinalDeclarationGuard.requireNotFinalDeclared(userId, taxYear)
+
         val now = LocalDateTime.now().toString()
         IncomeDividendEntries.update({ IncomeDividendEntries.id eq existingId }) {
             it[IncomeDividendEntries.supersededAt] = now
@@ -94,6 +107,8 @@ object IncomeDividendRepository {
         description: String,
         transactionDate: String,
     ): IncomeDividendEntry = transaction {
+        FinalDeclarationGuard.requireNotFinalDeclared(userId, taxYear)
+
         val now = LocalDateTime.now().toString()
         val id = IncomeDividendEntries.insert {
             it[IncomeDividendEntries.taxYear]           = taxYear

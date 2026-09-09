@@ -19,6 +19,7 @@
 
 package org.charlesatkinson.libremtd.database
 
+import org.charlesatkinson.libremtd.database.components.FinalDeclarationGuard
 import org.charlesatkinson.libremtd.database.tables.IncomePropertyForeignEntries
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.transactions.transaction
@@ -49,6 +50,8 @@ object IncomePropertyForeignRepository {
         transactionDate: String,
     ): IncomePropertyForeignEntry {
         return transaction {
+            FinalDeclarationGuard.requireNotFinalDeclaredForPeriod(userId, periodId)
+
             val now = LocalDateTime.now().toString()
             val id = IncomePropertyForeignEntries.insert {
                 it[IncomePropertyForeignEntries.periodId]        = periodId
@@ -87,6 +90,8 @@ object IncomePropertyForeignRepository {
         transactionDate: String,
     ): IncomePropertyForeignEntry {
         return transaction {
+            FinalDeclarationGuard.requireNotFinalDeclaredForPeriod(userId, periodId)
+
             val now = LocalDateTime.now().toString()
 
             IncomePropertyForeignEntries.update({ IncomePropertyForeignEntries.id eq existingId }) {
@@ -121,6 +126,16 @@ object IncomePropertyForeignRepository {
 
     fun delete(id: Int) {
         transaction {
+            val row = IncomePropertyForeignEntries
+                .selectAll()
+                .where { IncomePropertyForeignEntries.id eq id }
+                .singleOrNull() ?: return@transaction
+
+            FinalDeclarationGuard.requireNotFinalDeclaredForPeriod(
+                row[IncomePropertyForeignEntries.userId],
+                row[IncomePropertyForeignEntries.periodId],
+            )
+
             IncomePropertyForeignEntries.update({ IncomePropertyForeignEntries.id eq id }) {
                 it[supersededAt] = LocalDateTime.now().toString()
             }

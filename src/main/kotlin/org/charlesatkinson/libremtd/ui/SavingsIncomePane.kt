@@ -29,8 +29,11 @@ import kotlinx.coroutines.javafx.JavaFx
 import kotlinx.coroutines.launch
 import org.charlesatkinson.libremtd.database.IncomeSavingsEntry
 import org.charlesatkinson.libremtd.database.IncomeSavingsRepository
+import org.charlesatkinson.libremtd.database.SubmissionRepository
+import org.charlesatkinson.libremtd.database.components.FinalDeclarationLockedException
 import org.charlesatkinson.libremtd.database.taxYearForDate
 import org.charlesatkinson.libremtd.ui.components.Dialogs
+import org.charlesatkinson.libremtd.ui.components.FinalDeclarationLock
 import org.charlesatkinson.libremtd.ui.components.TaxYearSelector
 import org.charlesatkinson.libremtd.ui.components.hintLabel
 import org.charlesatkinson.libremtd.ui.components.wrappingLabel
@@ -51,6 +54,19 @@ class SavingsIncomePane(
     }
 
     private lateinit var currentTaxYear: String
+
+    // Declared before taxYearSelector below: TaxYearSelector may invoke
+    // its callback synchronously during construction, and that callback
+    // (via loadEntries -> applyLock) uses this field.
+    private val finalDeclarationLock = FinalDeclarationLock()
+
+    // Bumped on every reload request; a coroutine only applies its result
+    // if this hasn't moved on since it captured its own value. Guards
+    // against two overlapping loadEntries() calls resolving out of order
+    // and the stale one overwriting the current pane state, including the
+    // Final Declaration lock.
+    private var loadGeneration = 0
+
     private val taxYearSelector = TaxYearSelector(userId = userId) { year ->
         currentTaxYear = year
         loadEntries()
@@ -60,6 +76,8 @@ class SavingsIncomePane(
     private val amountField    = TextField()
     private val descField      = TextField()
     private val dateField      = TextField()
+    private var addBtn: Button?    = null
+    private var deleteBtn: Button? = null
 
     private val entriesHeading     = wrappingLabel("").apply { style = "-fx-font-weight: bold;" }
     private val entriesPlaceholder = wrappingLabel("")
@@ -77,6 +95,7 @@ class SavingsIncomePane(
                 },
                 hintLabel("Record savings interest received. The tax year is derived from the transaction date."),
                 taxYearSelector.root,
+                finalDeclarationLock.banner,
                 buildEntryForm(),
                 buildEntriesTable(),
                 buildTotalBar(),
@@ -85,16 +104,25 @@ class SavingsIncomePane(
     }
 
     private fun loadEntries() {
+        val generation = ++loadGeneration
         scope.launch(Dispatchers.IO) {
             val loaded = IncomeSavingsRepository.currentForTaxYear(userId, currentTaxYear)
+            val locked = SubmissionRepository.isFinalDeclared(userId, currentTaxYear)
             kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+                if (generation != loadGeneration) return@withContext
                 entries.setAll(loaded)
                 refreshTotal()
                 entriesHeading.text     = "Entries in $currentTaxYear"
                 entriesPlaceholder.text = "No savings entries for $currentTaxYear"
+                applyLock(isFinalDeclared = locked, taxYear = currentTaxYear)
                 onStatusChange("Loaded savings income for $currentTaxYear")
             }
         }
+    }
+
+    private fun applyLock(isFinalDeclared: Boolean, taxYear: String) {
+        val controls = listOfNotNull(categoryPicker, amountField, descField, dateField, addBtn, deleteBtn)
+        finalDeclarationLock.update(isFinalDeclared, taxYear, *controls.toTypedArray())
     }
 
     private fun buildEntryForm(): VBox {
@@ -121,10 +149,11 @@ class SavingsIncomePane(
             prefWidth  = 170.0
         }
 
-        val addBtn = Button("Add").apply {
+        val newAddBtn = Button("Add").apply {
             styleClass.add("primary-action-button")
             setOnAction { handleAdd() }
         }
+        addBtn = newAddBtn
 
         return VBox(8.0).apply {
             padding = Insets(12.0, 16.0, 12.0, 16.0)
@@ -135,7 +164,7 @@ class SavingsIncomePane(
                 Separator(),
                 HBox(10.0).apply {
                     alignment = Pos.CENTER_LEFT
-                    children.addAll(categoryPicker, amountField, descField, dateField, addBtn)
+                    children.addAll(categoryPicker, amountField, descField, dateField, newAddBtn)
                 },
             )
         }
@@ -176,19 +205,26 @@ class SavingsIncomePane(
         }
 
         scope.launch(Dispatchers.IO) {
-            val entry = IncomeSavingsRepository.recordSavingsIncome(
-                userId          = userId,
-                taxYear         = derivedTaxYear,
-                category        = category!!.dbKey,
-                amount          = amount!!,
-                description     = desc,
-                transactionDate = dateText,
-            )
-            kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
-                entries.add(entry)
-                refreshTotal()
-                clearForm()
-                onStatusChange("Savings entry added ✓")
+            try {
+                val entry = IncomeSavingsRepository.recordSavingsIncome(
+                    userId          = userId,
+                    taxYear         = derivedTaxYear,
+                    category        = category!!.dbKey,
+                    amount          = amount!!,
+                    description     = desc,
+                    transactionDate = dateText,
+                )
+                kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+                    entries.add(entry)
+                    refreshTotal()
+                    clearForm()
+                    onStatusChange("Savings entry added ✓")
+                }
+            } catch (e: FinalDeclarationLockedException) {
+                kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+                    Dialogs.showError(e.message ?: "This tax year can no longer be amended.", title = "Tax year locked")
+                    loadEntries()
+                }
             }
         }
     }
@@ -224,7 +260,7 @@ class SavingsIncomePane(
             )
         }
 
-        val deleteBtn = Button("Delete selected").apply {
+        val newDeleteBtn = Button("Delete selected").apply {
             styleClass.add("primary-action-button")
             setOnAction {
                 val selected = table.selectionModel.selectedItem
@@ -239,15 +275,23 @@ class SavingsIncomePane(
                 )
                 if (!confirmed) return@setOnAction
                 scope.launch(Dispatchers.IO) {
-                    IncomeSavingsRepository.delete(selected.id)
-                    kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
-                        entries.remove(selected)
-                        refreshTotal()
-                        onStatusChange("Entry deleted")
+                    try {
+                        IncomeSavingsRepository.delete(selected.id)
+                        kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+                            entries.remove(selected)
+                            refreshTotal()
+                            onStatusChange("Entry deleted")
+                        }
+                    } catch (e: FinalDeclarationLockedException) {
+                        kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+                            Dialogs.showError(e.message ?: "This tax year can no longer be amended.", title = "Tax year locked")
+                            loadEntries()
+                        }
                     }
                 }
             }
         }
+        deleteBtn = newDeleteBtn
 
         return VBox(8.0).apply {
             padding = Insets(12.0, 16.0, 12.0, 16.0)
@@ -257,7 +301,7 @@ class SavingsIncomePane(
                 entriesHeading,
                 Separator(),
                 table,
-                deleteBtn,
+                newDeleteBtn,
             )
         }
     }

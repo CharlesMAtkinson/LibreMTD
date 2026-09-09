@@ -47,8 +47,22 @@ object PeriodRepository {
                 .singleOrNull()
 
             if (existing != null) {
+                val id = existing[Periods.id]
+
+                // Genuinely update the stored row to match the new
+                // arguments — previously this branch only returned a
+                // Period built from the new values without writing them,
+                // so a repeat upsert() silently left the old dates in the
+                // database. See PeriodRepositoryTest's
+                // "upsert persists new dates" test.
+                Periods.update({ Periods.id eq id }) {
+                    it[Periods.startDate] = startDate
+                    it[Periods.endDate]   = endDate
+                    it[Periods.dueDate]   = dueDate
+                }
+
                 Period(
-                    id         = existing[Periods.id],
+                    id         = id,
                     taxYear    = taxYear,
                     periodKey  = periodKey,
                     startDate  = startDate,

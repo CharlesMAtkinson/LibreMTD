@@ -100,22 +100,23 @@ object PropertyRepository {
             Properties
                 .selectAll()
                 .where { (Properties.userId eq userId) and Properties.supersededAt.isNull() }
-                .map { row ->
-                    Property(
-                        id                     = row[Properties.id],
-                        userId                 = row[Properties.userId],
-                        address                = row[Properties.address],
-                        postcode               = row[Properties.postcode],
-                        propertyType           = PropertyType.valueOf(row[Properties.propertyType]),
-                        countryCode            = row[Properties.countryCode],
-                        hmrcPropertyId         = row[Properties.hmrcPropertyId],
-                        hmrcRegisteredAt       = row[Properties.hmrcRegisteredAt],
-                        hmrcRegisteredTaxYear  = row[Properties.hmrcRegisteredTaxYear],
-                        createdAt              = row[Properties.createdAt],
-                        endedAt                = row[Properties.endedAt],
-                        supersededAt           = row[Properties.supersededAt],
-                    )
-                }
+                .map { row -> row.toProperty() }
+        }
+    }
+
+    /**
+     * Returns a single property by its id, or null if it does not exist or
+     * has been removed. Added so that code which only has a propertyId —
+     * such as FinalDeclarationGuard's use from ForeignPropertyElectionRepository
+     * — can resolve the owning userId without depending on findByUser.
+     */
+    fun findById(id: Int): Property? {
+        return transaction {
+            Properties
+                .selectAll()
+                .where { (Properties.id eq id) and Properties.supersededAt.isNull() }
+                .map { row -> row.toProperty() }
+                .singleOrNull()
         }
     }
 
@@ -173,4 +174,19 @@ object PropertyRepository {
             Properties.deleteWhere { Properties.id eq id }
         }
     }
+
+    private fun ResultRow.toProperty() = Property(
+        id                     = this[Properties.id],
+        userId                 = this[Properties.userId],
+        address                = this[Properties.address],
+        postcode               = this[Properties.postcode],
+        propertyType           = PropertyType.valueOf(this[Properties.propertyType]),
+        countryCode            = this[Properties.countryCode],
+        hmrcPropertyId         = this[Properties.hmrcPropertyId],
+        hmrcRegisteredAt       = this[Properties.hmrcRegisteredAt],
+        hmrcRegisteredTaxYear  = this[Properties.hmrcRegisteredTaxYear],
+        createdAt              = this[Properties.createdAt],
+        endedAt                = this[Properties.endedAt],
+        supersededAt           = this[Properties.supersededAt],
+    )
 }

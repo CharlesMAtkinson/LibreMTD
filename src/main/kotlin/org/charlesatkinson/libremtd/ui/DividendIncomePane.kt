@@ -21,6 +21,7 @@ import javafx.beans.property.SimpleStringProperty
 import javafx.collections.FXCollections
 import javafx.geometry.Insets
 import javafx.geometry.Pos
+import javafx.scene.Node
 import javafx.scene.control.*
 import javafx.scene.layout.HBox
 import javafx.scene.layout.VBox
@@ -33,8 +34,11 @@ import org.charlesatkinson.libremtd.database.IncomeDividendEntry
 import org.charlesatkinson.libremtd.database.IncomeDividendForeignEntry
 import org.charlesatkinson.libremtd.database.IncomeDividendForeignRepository
 import org.charlesatkinson.libremtd.database.IncomeDividendRepository
+import org.charlesatkinson.libremtd.database.SubmissionRepository
+import org.charlesatkinson.libremtd.database.components.FinalDeclarationLockedException
 import org.charlesatkinson.libremtd.database.taxYearForDate
 import org.charlesatkinson.libremtd.ui.components.Dialogs
+import org.charlesatkinson.libremtd.ui.components.FinalDeclarationLock
 import org.charlesatkinson.libremtd.ui.components.TaxYearSelector
 import org.charlesatkinson.libremtd.ui.components.wrappingLabel
 import org.charlesatkinson.libremtd.ui.components.infoPopup
@@ -52,6 +56,17 @@ class DividendIncomePane(
 
     val root: VBox
 
+    // --- Final Declaration gate, shared across all three sections below,
+    //     since they are all scoped to the one currentTaxYear ---
+    private val finalDeclarationLock = FinalDeclarationLock()
+
+    // Bumped on every reload request; a coroutine only applies its result
+    // if this hasn't moved on since it captured its own value. Guards
+    // against two overlapping loadAllEntries() calls (e.g. from rapid tax
+    // year changes) resolving out of order and the stale one overwriting
+    // the current pane state, including the Final Declaration lock.
+    private var loadGeneration = 0
+
     // --- UK dividends from companies and funds ---
     private val ukEntries        = FXCollections.observableArrayList<IncomeDividendEntry>()
     private val ukTotalLabel     = wrappingLabel("£0.00").apply { styleClass.add("total-value-label") }
@@ -59,6 +74,8 @@ class DividendIncomePane(
     private val ukAmountField    = TextField()
     private val ukDescField      = TextField()
     private val ukDateField      = TextField()
+    private var ukAddBtn: Button?    = null
+    private var ukDeleteBtn: Button? = null
 
     // --- UK dividends — special types ---
     private val scalarEntries        = FXCollections.observableArrayList<IncomeDividendEntry>()
@@ -67,6 +84,8 @@ class DividendIncomePane(
     private val scalarAmountField    = TextField()
     private val scalarRefField       = TextField()
     private val scalarDateField      = TextField()
+    private var scalarAddBtn: Button?    = null
+    private var scalarDeleteBtn: Button? = null
 
     // --- Foreign dividends ---
     private val foreignEntries           = FXCollections.observableArrayList<IncomeDividendForeignEntry>()
@@ -79,6 +98,8 @@ class DividendIncomePane(
     private val foreignFtcrCheck         = CheckBox("Foreign tax credit relief claimed")
     private val foreignTaxableField      = TextField()
     private val foreignDateField         = TextField()
+    private var foreignAddBtn: Button?    = null
+    private var foreignDeleteBtn: Button? = null
 
     private lateinit var currentTaxYear: String
 
@@ -104,6 +125,7 @@ class DividendIncomePane(
             },
             hintLabel("Record dividend income received during this tax year."),
             taxYearSelector.root,
+            finalDeclarationLock.banner,
 
             sectionHeading("UK dividends from companies and funds"),
             hintLabel(
@@ -128,10 +150,10 @@ class DividendIncomePane(
             sectionHeading("Foreign dividends"),
             hintLabel(
                 "Dividends from overseas companies, and dividend income received whilst abroad. " +
-                    "Each entry covers one country. Amount before tax, tax taken off, and special " +
-                    "withholding tax are optional — enter them if known. Taxable amount is required. " +
-                    "Tick 'foreign tax credit relief claimed' only if you are claiming relief for " +
-                    "overseas tax already paid — confirm with your tax adviser if unsure."
+                        "Each entry covers one country. Amount before tax, tax taken off, and special " +
+                        "withholding tax are optional — enter them if known. Taxable amount is required. " +
+                        "Tick 'foreign tax credit relief claimed' only if you are claiming relief for " +
+                        "overseas tax already paid — confirm with your tax adviser if unsure."
             ),
             buildForeignEntryForm(),
             buildForeignEntriesTable(),
@@ -144,6 +166,16 @@ class DividendIncomePane(
             Separator(),
             wrappingLabel(text).apply { style = "-fx-font-size: 16px; -fx-font-weight: bold;" },
         )
+    }
+
+    private fun applyLock(isFinalDeclared: Boolean, taxYear: String) {
+        val controls: List<Node> = listOfNotNull(
+            ukCategoryPicker, ukAmountField, ukDescField, ukDateField, ukAddBtn, ukDeleteBtn,
+            scalarCategoryPicker, scalarAmountField, scalarRefField, scalarDateField, scalarAddBtn, scalarDeleteBtn,
+            foreignCategoryPicker, foreignCountryField, foreignAmountBeforeField, foreignTaxTakenField,
+            foreignSwtField, foreignFtcrCheck, foreignTaxableField, foreignDateField, foreignAddBtn, foreignDeleteBtn,
+        )
+        finalDeclarationLock.update(isFinalDeclared, taxYear, *controls.toTypedArray())
     }
 
     // -------------------------------------------------------------------------
@@ -162,10 +194,11 @@ class DividendIncomePane(
         ukDescField.apply   { promptText = "Description";      prefWidth = 200.0 }
         ukDateField.apply   { promptText = "Date (YYYY-MM-DD)"; prefWidth = 170.0 }
 
-        val addBtn = Button("Add").apply {
+        val newAddBtn = Button("Add").apply {
             styleClass.add("primary-action-button")
             setOnAction { handleUkAdd() }
         }
+        ukAddBtn = newAddBtn
 
         return entryFormCard("New entry",
             HBox(10.0).apply {
@@ -184,7 +217,7 @@ class DividendIncomePane(
                     infoPopup("A note to help you identify this entry, e.g. 'Lloyds Banking Group Q2 dividend'."),
                     ukDateField,
                     infoPopup("The date the dividend was paid, in format YYYY-MM-DD (e.g. 2025-07-15)."),
-                    addBtn
+                    newAddBtn
                 )
             }
         )
@@ -220,19 +253,26 @@ class DividendIncomePane(
         }
 
         scope.launch(Dispatchers.IO) {
-            val entry = IncomeDividendRepository.recordDividend(
-                userId          = userId,
-                taxYear         = derivedTaxYear,
-                category        = category!!.dbKey,
-                amount          = amount!!,
-                description     = desc,
-                transactionDate = dateText,
-            )
-            kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
-                ukEntries.add(entry)
-                refreshUkTotal()
-                clearUkForm()
-                onStatusChange("UK dividend entry added ✓")
+            try {
+                val entry = IncomeDividendRepository.recordDividend(
+                    userId          = userId,
+                    taxYear         = derivedTaxYear,
+                    category        = category!!.dbKey,
+                    amount          = amount!!,
+                    description     = desc,
+                    transactionDate = dateText,
+                )
+                kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+                    ukEntries.add(entry)
+                    refreshUkTotal()
+                    clearUkForm()
+                    onStatusChange("UK dividend entry added ✓")
+                }
+            } catch (e: FinalDeclarationLockedException) {
+                kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+                    Dialogs.showError(e.message ?: "This tax year can no longer be amended.", title = "Tax year locked")
+                    loadAllEntries()
+                }
             }
         }
     }
@@ -268,11 +308,12 @@ class DividendIncomePane(
                 },
             )
         }
-        val deleteBtn = Button("Delete selected").apply {
+        val newDeleteBtn = Button("Delete selected").apply {
             styleClass.add("primary-action-button")
             setOnAction { deleteUkSelected(table) }
         }
-        return entryFormCard("Entries", table, deleteBtn)
+        ukDeleteBtn = newDeleteBtn
+        return entryFormCard("Entries", table, newDeleteBtn)
     }
 
     private fun deleteUkSelected(table: TableView<IncomeDividendEntry>) {
@@ -285,9 +326,16 @@ class DividendIncomePane(
             )
         ) return
         scope.launch(Dispatchers.IO) {
-            IncomeDividendRepository.delete(sel.id)
-            kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
-                ukEntries.remove(sel); refreshUkTotal(); onStatusChange("Entry deleted")
+            try {
+                IncomeDividendRepository.delete(sel.id)
+                kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+                    ukEntries.remove(sel); refreshUkTotal(); onStatusChange("Entry deleted")
+                }
+            } catch (e: FinalDeclarationLockedException) {
+                kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+                    Dialogs.showError(e.message ?: "This tax year can no longer be amended.", title = "Tax year locked")
+                    loadAllEntries()
+                }
             }
         }
     }
@@ -324,10 +372,11 @@ class DividendIncomePane(
         scalarRefField.apply    { promptText = "Reference"; prefWidth = 220.0 }
         scalarDateField.apply   { promptText = "Date (YYYY-MM-DD)";             prefWidth = 170.0 }
 
-        val addBtn = Button("Add").apply {
+        val newAddBtn = Button("Add").apply {
             styleClass.add("primary-action-button")
             setOnAction { handleScalarAdd() }
         }
+        scalarAddBtn = newAddBtn
 
         return entryFormCard("New entry",
             HBox(10.0).apply {
@@ -356,7 +405,7 @@ class DividendIncomePane(
                     infoPopup("A note to help you identify this entry, e.g. 'Lloyds Banking Group Q2 dividend'."),
                     scalarDateField,
                     infoPopup("The date the dividend was paid, in format YYYY-MM-DD (e.g. 2025-07-15)."),
-                    addBtn)
+                    newAddBtn)
             }
         )
     }
@@ -390,20 +439,27 @@ class DividendIncomePane(
         }
 
         scope.launch(Dispatchers.IO) {
-            val entry = IncomeDividendRepository.recordDividend(
-                userId            = userId,
-                taxYear           = derivedTaxYear,
-                category          = category!!.dbKey,
-                amount            = amount!!,
-                customerReference = ref,
-                description       = ref ?: "",
-                transactionDate   = dateText,
-            )
-            kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
-                scalarEntries.add(entry)
-                refreshScalarTotal()
-                clearScalarForm()
-                onStatusChange("Dividend entry added ✓")
+            try {
+                val entry = IncomeDividendRepository.recordDividend(
+                    userId            = userId,
+                    taxYear           = derivedTaxYear,
+                    category          = category!!.dbKey,
+                    amount            = amount!!,
+                    customerReference = ref,
+                    description       = ref ?: "",
+                    transactionDate   = dateText,
+                )
+                kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+                    scalarEntries.add(entry)
+                    refreshScalarTotal()
+                    clearScalarForm()
+                    onStatusChange("Dividend entry added ✓")
+                }
+            } catch (e: FinalDeclarationLockedException) {
+                kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+                    Dialogs.showError(e.message ?: "This tax year can no longer be amended.", title = "Tax year locked")
+                    loadAllEntries()
+                }
             }
         }
     }
@@ -439,11 +495,12 @@ class DividendIncomePane(
                 },
             )
         }
-        val deleteBtn = Button("Delete selected").apply {
+        val newDeleteBtn = Button("Delete selected").apply {
             styleClass.add("primary-action-button")
             setOnAction { deleteScalarSelected(table) }
         }
-        return entryFormCard("Entries", table, deleteBtn)
+        scalarDeleteBtn = newDeleteBtn
+        return entryFormCard("Entries", table, newDeleteBtn)
     }
 
     private fun deleteScalarSelected(table: TableView<IncomeDividendEntry>) {
@@ -456,9 +513,16 @@ class DividendIncomePane(
             )
         ) return
         scope.launch(Dispatchers.IO) {
-            IncomeDividendRepository.delete(sel.id)
-            kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
-                scalarEntries.remove(sel); refreshScalarTotal(); onStatusChange("Entry deleted")
+            try {
+                IncomeDividendRepository.delete(sel.id)
+                kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+                    scalarEntries.remove(sel); refreshScalarTotal(); onStatusChange("Entry deleted")
+                }
+            } catch (e: FinalDeclarationLockedException) {
+                kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+                    Dialogs.showError(e.message ?: "This tax year can no longer be amended.", title = "Tax year locked")
+                    loadAllEntries()
+                }
             }
         }
     }
@@ -498,10 +562,11 @@ class DividendIncomePane(
         foreignDateField.apply         { promptText = "YYYY-MM-DD";     prefWidth = 150.0 }
         foreignCountryField.apply      { promptText = "Example FRA";    prefWidth = 140.0 }
 
-        val addBtn = Button("Add").apply {
+        val newAddBtn = Button("Add").apply {
             styleClass.add("primary-action-button")
             setOnAction { handleForeignAdd() }
         }
+        foreignAddBtn = newAddBtn
 
         return entryFormCard("New entry",
             VBox(8.0).apply {
@@ -533,7 +598,7 @@ class DividendIncomePane(
                             ),
                             foreignTaxableField,
                             infoPopup("Taxable amount (£)"),
-                            )
+                        )
                     },
                     HBox(10.0).apply {
                         alignment = Pos.CENTER_LEFT
@@ -543,7 +608,7 @@ class DividendIncomePane(
                                 "Tick 'foreign tax credit relief claimed' only if you are claiming relief for " +
                                         "overseas tax already paid — confirm with your tax adviser if unsure."
                             ),
-                            addBtn,
+                            newAddBtn,
                         )
                     },
                 )
@@ -594,23 +659,30 @@ class DividendIncomePane(
         }
 
         scope.launch(Dispatchers.IO) {
-            val entry = IncomeDividendForeignRepository.record(
-                userId                 = userId,
-                taxYear                = derivedTaxYear,
-                category               = category!!.dbKey,
-                countryCode            = countryRaw,
-                amountBeforeTax        = amtBefore,
-                taxTakenOff            = taxTaken,
-                specialWithholdingTax  = swt,
-                foreignTaxCreditRelief = ftcr,
-                taxableAmount          = taxable!!,
-                transactionDate        = dateText,
-            )
-            kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
-                foreignEntries.add(entry)
-                refreshForeignTotal()
-                clearForeignForm()
-                onStatusChange("Foreign dividend entry added ✓")
+            try {
+                val entry = IncomeDividendForeignRepository.record(
+                    userId                 = userId,
+                    taxYear                = derivedTaxYear,
+                    category               = category!!.dbKey,
+                    countryCode            = countryRaw,
+                    amountBeforeTax        = amtBefore,
+                    taxTakenOff            = taxTaken,
+                    specialWithholdingTax  = swt,
+                    foreignTaxCreditRelief = ftcr,
+                    taxableAmount          = taxable!!,
+                    transactionDate        = dateText,
+                )
+                kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+                    foreignEntries.add(entry)
+                    refreshForeignTotal()
+                    clearForeignForm()
+                    onStatusChange("Foreign dividend entry added ✓")
+                }
+            } catch (e: FinalDeclarationLockedException) {
+                kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+                    Dialogs.showError(e.message ?: "This tax year can no longer be amended.", title = "Tax year locked")
+                    loadAllEntries()
+                }
             }
         }
     }
@@ -673,11 +745,12 @@ class DividendIncomePane(
                 },
             )
         }
-        val deleteBtn = Button("Delete selected").apply {
+        val newDeleteBtn = Button("Delete selected").apply {
             styleClass.add("primary-action-button")
             setOnAction { deleteForeignSelected(table) }
         }
-        return entryFormCard("Entries", table, deleteBtn)
+        foreignDeleteBtn = newDeleteBtn
+        return entryFormCard("Entries", table, newDeleteBtn)
     }
 
     private fun deleteForeignSelected(table: TableView<IncomeDividendForeignEntry>) {
@@ -690,9 +763,16 @@ class DividendIncomePane(
             )
         ) return
         scope.launch(Dispatchers.IO) {
-            IncomeDividendForeignRepository.delete(sel.id)
-            kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
-                foreignEntries.remove(sel); refreshForeignTotal(); onStatusChange("Entry deleted")
+            try {
+                IncomeDividendForeignRepository.delete(sel.id)
+                kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+                    foreignEntries.remove(sel); refreshForeignTotal(); onStatusChange("Entry deleted")
+                }
+            } catch (e: FinalDeclarationLockedException) {
+                kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+                    Dialogs.showError(e.message ?: "This tax year can no longer be amended.", title = "Tax year locked")
+                    loadAllEntries()
+                }
             }
         }
     }
@@ -721,6 +801,7 @@ class DividendIncomePane(
     // -------------------------------------------------------------------------
 
     private fun loadAllEntries() {
+        val generation = ++loadGeneration
         scope.launch(Dispatchers.IO) {
             val allUk      = IncomeDividendRepository.currentDividendsForYear(userId, currentTaxYear)
             val ukDbKeys   = DividendCategory.entries.map { it.dbKey }.toSet()
@@ -733,12 +814,18 @@ class DividendIncomePane(
                 logger.warn { "Dividend entries with unrecognised category keys: ${unknown.map { it.category }.distinct()}" }
             }
             val foreign = IncomeDividendForeignRepository.currentEntriesForYear(userId, currentTaxYear)
+            val locked  = SubmissionRepository.isFinalDeclared(userId, currentTaxYear)
 
             kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+                // Discard this result if a newer reload has been requested
+                // since this one started — see loadGeneration's doc comment.
+                if (generation != loadGeneration) return@withContext
+
                 ukEntries.setAll(uk)
                 scalarEntries.setAll(scalar)
                 foreignEntries.setAll(foreign)
                 refreshUkTotal(); refreshScalarTotal(); refreshForeignTotal()
+                applyLock(isFinalDeclared = locked, taxYear = currentTaxYear)
                 onStatusChange("Loaded dividend income for $currentTaxYear")
             }
         }

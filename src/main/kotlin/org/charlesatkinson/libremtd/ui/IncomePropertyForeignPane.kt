@@ -31,9 +31,13 @@ import kotlinx.coroutines.javafx.JavaFx
 import kotlinx.coroutines.launch
 import org.charlesatkinson.libremtd.database.IncomePropertyForeignEntry
 import org.charlesatkinson.libremtd.database.IncomePropertyForeignRepository
+import org.charlesatkinson.libremtd.database.PeriodRepository
 import org.charlesatkinson.libremtd.database.Property
 import org.charlesatkinson.libremtd.database.PropertyType
+import org.charlesatkinson.libremtd.database.SubmissionRepository
+import org.charlesatkinson.libremtd.database.components.FinalDeclarationLockedException
 import org.charlesatkinson.libremtd.ui.components.Dialogs
+import org.charlesatkinson.libremtd.ui.components.FinalDeclarationLock
 import org.charlesatkinson.libremtd.ui.components.PeriodSelector
 import org.charlesatkinson.libremtd.ui.components.PropertySelector
 import org.charlesatkinson.libremtd.ui.components.hintLabel
@@ -54,8 +58,12 @@ class IncomePropertyForeignPane(
         styleClass.add("total-value-label")
     }
 
-    private var currentPeriodId: Int?   = null
+    private var currentPeriodId: Int?      = null
     private var currentProperty: Property? = null
+
+    private val finalDeclarationLock = FinalDeclarationLock()
+
+    private var loadGeneration = 0
 
     private val propertySelector = PropertySelector(userId, PropertyType.FOREIGN) { property ->
         currentProperty = property
@@ -71,6 +79,8 @@ class IncomePropertyForeignPane(
     private val amountField    = TextField()
     private val descField      = TextField()
     private val dateField      = TextField()
+    private var addBtn: Button?    = null
+    private var deleteBtn: Button? = null
 
     init {
         root = buildUI()
@@ -86,6 +96,7 @@ class IncomePropertyForeignPane(
                 hintLabel("Record income received for the selected foreign property and quarter."),
                 propertySelector.root,
                 periodSelector.root,
+                finalDeclarationLock.banner,
                 buildEntryForm(),
                 buildEntriesTable(),
                 buildTotalBar(),
@@ -94,10 +105,12 @@ class IncomePropertyForeignPane(
     }
 
     private fun reloadIfReady() {
+        loadGeneration++
         val periodId   = currentPeriodId
         val property   = currentProperty
         if (periodId == null || property == null) {
             entries.clear()
+            applyLock(isFinalDeclared = false, taxYear = "")
             onStatusChange("No period or property selected")
             return
         }
@@ -106,13 +119,23 @@ class IncomePropertyForeignPane(
     }
 
     private fun loadEntries(periodId: Int, propertyId: Int) {
+        val generation = loadGeneration
         scope.launch(Dispatchers.IO) {
-            val loaded = IncomePropertyForeignRepository.currentForPeriodAndProperty(periodId, propertyId)
+            val loaded  = IncomePropertyForeignRepository.currentForPeriodAndProperty(periodId, propertyId)
+            val taxYear = PeriodRepository.findById(periodId)?.taxYear
+            val locked  = taxYear != null && SubmissionRepository.isFinalDeclared(userId, taxYear)
             kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+                if (generation != loadGeneration) return@withContext
                 entries.setAll(loaded)
                 refreshTotal()
+                applyLock(isFinalDeclared = locked, taxYear = taxYear ?: "")
             }
         }
+    }
+
+    private fun applyLock(isFinalDeclared: Boolean, taxYear: String) {
+        val controls = listOfNotNull(categoryPicker, amountField, descField, dateField, addBtn, deleteBtn)
+        finalDeclarationLock.update(isFinalDeclared, taxYear, *controls.toTypedArray())
     }
 
     private fun buildEntryForm(): VBox {
@@ -139,10 +162,11 @@ class IncomePropertyForeignPane(
             prefWidth  = 170.0
         }
 
-        val addBtn = Button("Add").apply {
+        val newAddBtn = Button("Add").apply {
             styleClass.add("primary-action-button")
             setOnAction { handleAdd() }
         }
+        addBtn = newAddBtn
 
         return VBox(8.0).apply {
             padding = Insets(12.0, 16.0, 12.0, 16.0)
@@ -153,7 +177,7 @@ class IncomePropertyForeignPane(
                 Separator(),
                 HBox(10.0).apply {
                     alignment = Pos.CENTER_LEFT
-                    children.addAll(categoryPicker, amountField, descField, dateField, addBtn)
+                    children.addAll(categoryPicker, amountField, descField, dateField, newAddBtn)
                 },
             )
         }
@@ -188,20 +212,27 @@ class IncomePropertyForeignPane(
         }
 
         scope.launch(Dispatchers.IO) {
-            val entry = IncomePropertyForeignRepository.recordForeignPropertyIncome(
-                periodId        = periodId,
-                userId          = userId,
-                propertyId      = property.id,
-                category        = category!!.dbKey,
-                amount          = amount!!,
-                description     = desc,
-                transactionDate = dateText,
-            )
-            kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
-                entries.add(entry)
-                refreshTotal()
-                clearForm()
-                onStatusChange("Income entry added ✓")
+            try {
+                val entry = IncomePropertyForeignRepository.recordForeignPropertyIncome(
+                    periodId        = periodId,
+                    userId          = userId,
+                    propertyId      = property.id,
+                    category        = category!!.dbKey,
+                    amount          = amount!!,
+                    description     = desc,
+                    transactionDate = dateText,
+                )
+                kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+                    entries.add(entry)
+                    refreshTotal()
+                    clearForm()
+                    onStatusChange("Income entry added ✓")
+                }
+            } catch (e: FinalDeclarationLockedException) {
+                kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+                    Dialogs.showError(e.message ?: "This tax year can no longer be amended.", title = "Tax year locked")
+                    reloadIfReady()
+                }
             }
         }
     }
@@ -237,7 +268,7 @@ class IncomePropertyForeignPane(
             )
         }
 
-        val deleteBtn = Button("Delete selected").apply {
+        val newDeleteBtn = Button("Delete selected").apply {
             styleClass.add("primary-action-button")
             setOnAction {
                 val selected = table.selectionModel.selectedItem
@@ -252,15 +283,23 @@ class IncomePropertyForeignPane(
                 )
                 if (!confirmed) return@setOnAction
                 scope.launch(Dispatchers.IO) {
-                    IncomePropertyForeignRepository.delete(selected.id)
-                    kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
-                        entries.remove(selected)
-                        refreshTotal()
-                        onStatusChange("Entry deleted")
+                    try {
+                        IncomePropertyForeignRepository.delete(selected.id)
+                        kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+                            entries.remove(selected)
+                            refreshTotal()
+                            onStatusChange("Entry deleted")
+                        }
+                    } catch (e: FinalDeclarationLockedException) {
+                        kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+                            Dialogs.showError(e.message ?: "This tax year can no longer be amended.", title = "Tax year locked")
+                            reloadIfReady()
+                        }
                     }
                 }
             }
         }
+        deleteBtn = newDeleteBtn
 
         return VBox(8.0).apply {
             padding = Insets(12.0, 16.0, 12.0, 16.0)
@@ -270,7 +309,7 @@ class IncomePropertyForeignPane(
                 wrappingLabel("Entries this period").apply { style = "-fx-font-weight: bold;" },
                 Separator(),
                 table,
-                deleteBtn,
+                newDeleteBtn,
             )
         }
     }

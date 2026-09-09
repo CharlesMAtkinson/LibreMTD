@@ -19,6 +19,7 @@
 
 package org.charlesatkinson.libremtd.database
 
+import org.charlesatkinson.libremtd.database.components.FinalDeclarationGuard
 import org.charlesatkinson.libremtd.database.tables.ForeignPropertyElections
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.transactions.transaction
@@ -127,6 +128,10 @@ object ForeignPropertyElectionRepository {
         rolledForwardFromTaxYear: String?,
     ): ForeignPropertyElection {
         return transaction {
+            val property = PropertyRepository.findById(propertyId)
+                ?: throw IllegalArgumentException("Property $propertyId not found")
+            FinalDeclarationGuard.requireNotFinalDeclared(property.userId, taxYear)
+
             val now = LocalDateTime.now().toString()
 
             ForeignPropertyElections.update({

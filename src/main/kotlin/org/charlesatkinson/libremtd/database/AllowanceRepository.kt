@@ -17,6 +17,7 @@
 
 package org.charlesatkinson.libremtd.database
 
+import org.charlesatkinson.libremtd.database.components.FinalDeclarationGuard
 import org.charlesatkinson.libremtd.database.tables.AllowanceEntries
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
@@ -42,6 +43,8 @@ object AllowanceRepository {
         amount: Double,
     ): AllowanceEntry {
         return transaction {
+            FinalDeclarationGuard.requireNotFinalDeclared(userId, taxYear)
+
             val now = LocalDateTime.now().toString()
             val id = AllowanceEntries.insert {
                 it[AllowanceEntries.userId]    = userId
@@ -64,6 +67,8 @@ object AllowanceRepository {
         amount: Double,
     ): AllowanceEntry {
         return transaction {
+            FinalDeclarationGuard.requireNotFinalDeclared(userId, taxYear)
+
             val now = LocalDateTime.now().toString()
 
             AllowanceEntries.update({ AllowanceEntries.id eq existingId }) {

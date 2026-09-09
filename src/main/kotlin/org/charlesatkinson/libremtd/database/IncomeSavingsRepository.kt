@@ -17,6 +17,7 @@
 
 package org.charlesatkinson.libremtd.database
 
+import org.charlesatkinson.libremtd.database.components.FinalDeclarationGuard
 import org.charlesatkinson.libremtd.database.tables.IncomeSavingsEntries
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.transactions.transaction
@@ -45,6 +46,8 @@ object IncomeSavingsRepository {
         transactionDate: String,
     ): IncomeSavingsEntry {
         return transaction {
+            FinalDeclarationGuard.requireNotFinalDeclared(userId, taxYear)
+
             val now = LocalDateTime.now().toString()
             val id = IncomeSavingsEntries.insert {
                 it[IncomeSavingsEntries.userId]          = userId
@@ -80,6 +83,8 @@ object IncomeSavingsRepository {
         transactionDate: String,
     ): IncomeSavingsEntry {
         return transaction {
+            FinalDeclarationGuard.requireNotFinalDeclared(userId, taxYear)
+
             val now = LocalDateTime.now().toString()
 
             IncomeSavingsEntries.update({ IncomeSavingsEntries.id eq existingId }) {
@@ -112,6 +117,16 @@ object IncomeSavingsRepository {
 
     fun delete(id: Int) {
         transaction {
+            val row = IncomeSavingsEntries
+                .selectAll()
+                .where { IncomeSavingsEntries.id eq id }
+                .singleOrNull() ?: return@transaction
+
+            FinalDeclarationGuard.requireNotFinalDeclared(
+                row[IncomeSavingsEntries.userId],
+                row[IncomeSavingsEntries.taxYear],
+            )
+
             IncomeSavingsEntries.update({ IncomeSavingsEntries.id eq id }) {
                 it[supersededAt] = LocalDateTime.now().toString()
             }

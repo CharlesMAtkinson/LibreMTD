@@ -28,10 +28,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.javafx.JavaFx
 import kotlinx.coroutines.launch
 import org.charlesatkinson.libremtd.database.ExpensePropertyUkRepository
+import org.charlesatkinson.libremtd.database.PeriodRepository
 import org.charlesatkinson.libremtd.database.Property
 import org.charlesatkinson.libremtd.database.PropertyType
 import org.charlesatkinson.libremtd.database.ExpensePropertyUkEntry
+import org.charlesatkinson.libremtd.database.SubmissionRepository
+import org.charlesatkinson.libremtd.database.components.FinalDeclarationLockedException
 import org.charlesatkinson.libremtd.ui.components.Dialogs
+import org.charlesatkinson.libremtd.ui.components.FinalDeclarationLock
 import org.charlesatkinson.libremtd.ui.components.PeriodSelector
 import org.charlesatkinson.libremtd.ui.components.PropertySelector
 import org.charlesatkinson.libremtd.ui.components.hintLabel
@@ -55,6 +59,19 @@ class ExpensesPropertyUkPane(
     private var currentPeriodId: Int?      = null
     private var currentProperty: Property? = null
 
+    // Declared before any selector below: PropertySelector/PeriodSelector
+    // may invoke their callback synchronously during construction, and
+    // that callback (via reloadIfReady -> applyLock) uses this field.
+    private val finalDeclarationLock = FinalDeclarationLock()
+
+    // Bumped on every reload request; a coroutine only applies its result
+    // if this hasn't moved on since it captured its own value. Guards
+    // against two overlapping loadEntries() calls (e.g. from switching
+    // Property and Period in quick succession) resolving out of order and
+    // the stale one overwriting the current pane state, including the
+    // Final Declaration lock.
+    private var loadGeneration = 0
+
     private val propertySelector = PropertySelector(userId, PropertyType.UK) { property ->
         currentProperty = property
         reloadIfReady()
@@ -69,6 +86,8 @@ class ExpensesPropertyUkPane(
     private val amountField    = TextField()
     private val descField      = TextField()
     private val dateField      = TextField()
+    private var addBtn: Button?    = null
+    private var deleteBtn: Button? = null
 
     init {
         root = buildUI()
@@ -84,6 +103,7 @@ class ExpensesPropertyUkPane(
                 hintLabel("Record allowable expenses for the selected property and quarter."),
                 propertySelector.root,
                 periodSelector.root,
+                finalDeclarationLock.banner,
                 buildEntryForm(),
                 buildEntriesTable(),
                 buildTotalBar(),
@@ -92,10 +112,13 @@ class ExpensesPropertyUkPane(
     }
 
     private fun reloadIfReady() {
+        loadGeneration++ // invalidates any load still in flight for a
+        // previous selection, including one that hasn't returned yet
         val periodId = currentPeriodId
         val property = currentProperty
         if (periodId == null || property == null) {
             entries.clear()
+            applyLock(isFinalDeclared = false, taxYear = "")
             onStatusChange("No period or property selected")
             return
         }
@@ -104,13 +127,23 @@ class ExpensesPropertyUkPane(
     }
 
     private fun loadEntries(periodId: Int, propertyId: Int) {
+        val generation = loadGeneration
         scope.launch(Dispatchers.IO) {
-            val loaded = ExpensePropertyUkRepository.currentForPeriodAndProperty(periodId, propertyId)
+            val loaded  = ExpensePropertyUkRepository.currentForPeriodAndProperty(periodId, propertyId)
+            val taxYear = PeriodRepository.findById(periodId)?.taxYear
+            val locked  = taxYear != null && SubmissionRepository.isFinalDeclared(userId, taxYear)
             kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+                if (generation != loadGeneration) return@withContext
                 entries.setAll(loaded)
                 refreshTotal()
+                applyLock(isFinalDeclared = locked, taxYear = taxYear ?: "")
             }
         }
+    }
+
+    private fun applyLock(isFinalDeclared: Boolean, taxYear: String) {
+        val controls = listOfNotNull(categoryPicker, amountField, descField, dateField, addBtn, deleteBtn)
+        finalDeclarationLock.update(isFinalDeclared, taxYear, *controls.toTypedArray())
     }
 
     private fun buildEntryForm(): VBox {
@@ -137,10 +170,11 @@ class ExpensesPropertyUkPane(
             prefWidth  = 170.0
         }
 
-        val addBtn = Button("Add").apply {
+        val newAddBtn = Button("Add").apply {
             styleClass.add("primary-action-button")
             setOnAction { handleAdd() }
         }
+        addBtn = newAddBtn
 
         return VBox(8.0).apply {
             padding = Insets(12.0, 16.0, 12.0, 16.0)
@@ -151,7 +185,7 @@ class ExpensesPropertyUkPane(
                 Separator(),
                 HBox(10.0).apply {
                     alignment = Pos.CENTER_LEFT
-                    children.addAll(categoryPicker, amountField, descField, dateField, addBtn)
+                    children.addAll(categoryPicker, amountField, descField, dateField, newAddBtn)
                 },
             )
         }
@@ -186,20 +220,27 @@ class ExpensesPropertyUkPane(
         }
 
         scope.launch(Dispatchers.IO) {
-            val entry = ExpensePropertyUkRepository.record(
-                periodId        = periodId,
-                userId          = userId,
-                propertyId      = property.id,
-                category        = category!!.dbKey,
-                amount          = amount!!,
-                description     = desc,
-                transactionDate = dateText,
-            )
-            kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
-                entries.add(entry)
-                refreshTotal()
-                clearForm()
-                onStatusChange("Expense entry added ✓")
+            try {
+                val entry = ExpensePropertyUkRepository.record(
+                    periodId        = periodId,
+                    userId          = userId,
+                    propertyId      = property.id,
+                    category        = category!!.dbKey,
+                    amount          = amount!!,
+                    description     = desc,
+                    transactionDate = dateText,
+                )
+                kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+                    entries.add(entry)
+                    refreshTotal()
+                    clearForm()
+                    onStatusChange("Expense entry added ✓")
+                }
+            } catch (e: FinalDeclarationLockedException) {
+                kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+                    Dialogs.showError(e.message ?: "This tax year can no longer be amended.", title = "Tax year locked")
+                    reloadIfReady()
+                }
             }
         }
     }
@@ -235,7 +276,7 @@ class ExpensesPropertyUkPane(
             )
         }
 
-        val deleteBtn = Button("Delete selected").apply {
+        val newDeleteBtn = Button("Delete selected").apply {
             styleClass.add("primary-action-button")
             setOnAction {
                 val selected = table.selectionModel.selectedItem
@@ -250,15 +291,23 @@ class ExpensesPropertyUkPane(
                 )
                 if (!confirmed) return@setOnAction
                 scope.launch(Dispatchers.IO) {
-                    ExpensePropertyUkRepository.delete(selected.id)
-                    kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
-                        entries.remove(selected)
-                        refreshTotal()
-                        onStatusChange("Entry deleted")
+                    try {
+                        ExpensePropertyUkRepository.delete(selected.id)
+                        kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+                            entries.remove(selected)
+                            refreshTotal()
+                            onStatusChange("Entry deleted")
+                        }
+                    } catch (e: FinalDeclarationLockedException) {
+                        kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+                            Dialogs.showError(e.message ?: "This tax year can no longer be amended.", title = "Tax year locked")
+                            reloadIfReady()
+                        }
                     }
                 }
             }
         }
+        deleteBtn = newDeleteBtn
 
         return VBox(8.0).apply {
             padding = Insets(12.0, 16.0, 12.0, 16.0)
@@ -268,7 +317,7 @@ class ExpensesPropertyUkPane(
                 wrappingLabel("Entries this period").apply { style = "-fx-font-weight: bold;" },
                 Separator(),
                 table,
-                deleteBtn,
+                newDeleteBtn,
             )
         }
     }

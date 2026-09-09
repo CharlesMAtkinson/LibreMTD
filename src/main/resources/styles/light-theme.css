@@ -145,6 +145,31 @@
     -fx-opacity: 1.0;
 }
 
+/* ── Combo box popup (dropdown list) ─────────────────────────────────────
+   The rows shown when a ComboBox is opened live in a separate popup, not
+   as a descendant of the .combo-box node — so the .combo-box .list-cell
+   rule above, which only reaches the closed control's displayed value,
+   does not reach these. JavaFX's Modena stylesheet applies its own
+   higher-specificity selector to these popup rows and computes an
+   unreadable text colour here (confirmed by testing: unselected rows in
+   the Period/Tax Year dropdowns were invisible until selected). The same
+   !important + specific-selector approach as above is needed to win. */
+.combo-box-popup .list-view .list-cell {
+    -fx-background-color: #ffffff;
+    -fx-text-fill: #212121 !important;
+}
+
+.combo-box-popup .list-view .list-cell:filled:hover {
+    -fx-background-color: #e0e0e0;
+}
+
+/* Text colour unchanged from .list-cell:selected above: this theme's
+   accent (#0096c9) needs dark text to pass 4.5:1 (≈4.76:1 with #212121). */
+.combo-box-popup .list-view .list-cell:filled:selected {
+    -fx-background-color: #0096c9;
+    -fx-text-fill: #212121 !important;
+}
+
 /* ── Content area ─────────────────────────────────────────────────────── */
 .content-area {
     -fx-background-color: #ffffff;
@@ -475,4 +500,22 @@
     -fx-font-size: 14px;
     -fx-font-weight: bold;
     -fx-text-fill: #1a6b3c;
+}
+
+/* ── Warning banner (generic) ─────────────────────────────────────────── */
+/* Generic warning-style banner — background/border reused from
+   .disclaimer-banner, text colour reused from .status-warning, so any
+   "this is blocked" or "be careful" banner in the app reads consistently.
+   Used initially by FinalDeclarationLock; not tied to that one feature. */
+.warning-banner {
+    -fx-background-color: #fffbe6;
+    -fx-border-color: #f0c040;
+    -fx-border-radius: 4px;
+    -fx-background-radius: 4px;
+    -fx-padding: 8px 12px;
+}
+
+.warning-banner-text {
+    -fx-text-fill: #b8860b;
+    -fx-font-weight: bold;
 }
