@@ -26,8 +26,6 @@ import org.charlesatkinson.libremtd.utils.ApiResult
 
 private val logger = KotlinLogging.logger {}
 
-private val json = Json { ignoreUnknownKeys = true }
-
 class BsasClient(private val client: HmrcApiClient) {
 
     companion object {

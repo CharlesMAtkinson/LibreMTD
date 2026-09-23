@@ -36,6 +36,7 @@ import org.charlesatkinson.libremtd.security.FraudPreventionHeaders
 import org.charlesatkinson.libremtd.security.OAuth2Handler
 import org.charlesatkinson.libremtd.security.TokenStore
 import org.charlesatkinson.libremtd.utils.Config
+import org.charlesatkinson.libremtd.ui.components.RefreshableRoot
 import org.charlesatkinson.libremtd.ui.components.ThemeManager
 import org.charlesatkinson.libremtd.ui.components.UiPreferences
 import org.charlesatkinson.libremtd.ui.components.UiTheme
@@ -401,13 +402,18 @@ class MainWindow(
     }
 
     /**
-     * Called when ConnectPane signals a successful HMRC connection.
-     * Tells any already-cached panes that depend on connection state to refresh.
+     * Called when ConnectPane signals a successful HMRC connection. Calls
+     * refresh() on every cached pane that needs to reload data not known
+     * at construction time — periods and obligations, chiefly — regardless
+     * of which pane it is, by looking for the shared RefreshableRoot
+     * wrapper rather than checking each destination by name. Previously
+     * this only refreshed SubmissionsPane specifically; the four income/
+     * expense panes with a PeriodSelector had the same need but weren't
+     * covered, which is why their period dropdowns stayed empty until the
+     * user logged out and back in even after connecting to HMRC.
      */
     private fun notifyConnected() {
-        (paneCache[NavDestination.Submissions] as? SubmissionsPane.RefreshableRoot)
-            ?.refreshablePane
-            ?.refresh()
+        paneCache.values.filterIsInstance<RefreshableRoot>().forEach { it.refresh() }
     }
 
     fun setStatus(message: String) {

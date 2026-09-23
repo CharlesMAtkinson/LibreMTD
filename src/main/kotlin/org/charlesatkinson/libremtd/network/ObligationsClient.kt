@@ -18,7 +18,6 @@
 package org.charlesatkinson.libremtd.network
 
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 import org.charlesatkinson.libremtd.ui.Obligation
 import org.charlesatkinson.libremtd.ui.ObligationStatus
@@ -28,7 +27,6 @@ import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 
 private val logger = KotlinLogging.logger {}
-private val json   = Json { ignoreUnknownKeys = true }
 
 // ── API response model ────────────────────────────────────────────────────────
 

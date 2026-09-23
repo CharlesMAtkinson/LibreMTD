@@ -38,6 +38,7 @@ import org.charlesatkinson.libremtd.ui.components.Dialogs
 import org.charlesatkinson.libremtd.ui.components.FinalDeclarationLock
 import org.charlesatkinson.libremtd.ui.components.PeriodSelector
 import org.charlesatkinson.libremtd.ui.components.PropertySelector
+import org.charlesatkinson.libremtd.ui.components.RefreshableRoot
 import org.charlesatkinson.libremtd.ui.components.hintLabel
 import org.charlesatkinson.libremtd.ui.components.wrappingLabel
 import java.time.LocalDate
@@ -49,7 +50,7 @@ class ExpensesPropertyUkPane(
     private val onStatusChange: (String) -> Unit,
 ) {
 
-    val root: VBox
+    val root: RefreshableRoot
 
     private val entries    = FXCollections.observableArrayList<ExpensePropertyUkEntry>()
     private val totalLabel = wrappingLabel("£0.00").apply {
@@ -90,7 +91,21 @@ class ExpensesPropertyUkPane(
     private var deleteBtn: Button? = null
 
     init {
-        root = buildUI()
+        val innerVBox = buildUI()
+        root = RefreshableRoot(innerVBox) { refresh() }
+    }
+
+    /**
+     * Called by MainWindow after a successful HMRC connection, so this
+     * pane's PeriodSelector — built before any obligations had ever been
+     * fetched, and so possibly with nothing to offer — picks up periods
+     * that now exist. PeriodSelector.reload() re-applies the current
+     * selection itself, which re-triggers reloadIfReady() via the
+     * onSelectionChanged callback above, so nothing further is needed here.
+     * Must be called on the JavaFX application thread.
+     */
+    fun refresh() {
+        periodSelector.reload()
     }
 
     private fun buildUI(): VBox {

@@ -17,6 +17,7 @@
 
 package org.charlesatkinson.libremtd.ui
 
+import javafx.event.ActionEvent
 import javafx.geometry.Insets
 import javafx.geometry.Pos
 import javafx.scene.control.*
@@ -71,28 +72,20 @@ private const val FTCR_EXPLANATION =
             "You can change this at any time before your Final Declaration for the tax year — " +
             "each quarterly submission replaces the previous one, so an earlier choice isn't locked in."
 
-/**
- * The HMRC "Create Foreign Property Details" endpoint (which issues the UUID
- * propertyID) is only available for tax years starting from 2026-27 onwards:
- * https://developer.service.hmrc.gov.uk/api-documentation/docs/api/service/property-business-api/6.0/oas/page#tag/Foreign-Property-Details
- * For 2025-26 and earlier there is no HMRC-side record to create, so foreign
- * properties for those years are stored locally only, with no HMRC
- * connection required.
- *
- * Assumes taxYear is formatted "YYYY-YY", e.g. "2025-26" (the same format
- * TaxYearSelector uses elsewhere in the app). Adjust this if that ever
- * changes.
- */
-private fun foreignPropertyRequiresHmrc(taxYear: String): Boolean {
-    val startYear = taxYear.substringBefore("-").trim().toIntOrNull()
-    // If the format is ever unrecognised, fail safe by treating it as
-    // requiring HMRC rather than silently skipping registration.
-    return startYear == null || startYear >= 2026
-}
-
 private data class ForeignPropertyEndDetails(
     val endDate: String,
     val endReason: ForeignPropertyEndReason,
+)
+
+/** Result of the "Edit property" dialogue for UK properties — see [PropertiesPane.promptForUkEdit]. */
+private data class UkEditDetails(
+    val address: String,
+    val postcode: String,
+)
+
+/** Result of the "Edit property" dialogue for foreign properties — see [PropertiesPane.promptForForeignEdit]. */
+private data class ForeignEditDetails(
+    val address: String,
 )
 
 class PropertiesPane(
@@ -108,7 +101,7 @@ class PropertiesPane(
     private val foreignProperties = FXCollections.observableArrayList<Property>()
 
     // propertyId -> summary string for the FTCR table column, e.g.
-    // "2025-26 ✓ · 2026-27 ✗". Recomputed in loadProperties(); read (not
+    // "2026-27 ✓ · 2027-28 ✗". Recomputed in loadProperties(); read (not
     // queried) by the table's cell value factory so the FX thread never
     // makes a DB call directly.
     private val ftcrSummaries = mutableMapOf<Int, String>()
@@ -227,6 +220,14 @@ class PropertiesPane(
 
         typeGroup.selectedToggleProperty().addListener { _, _, _ -> handleTypeSelected() }
 
+        // ukRadio is already selected by the time this method runs (see its
+        // field initialiser above), which happened before the listener just
+        // above existed — so without this call, the fields hidden a few
+        // lines up would never be revealed until the user actively changed
+        // the toggle. This syncs the visible state to the actual initial
+        // selection, the same way any later click does.
+        handleTypeSelected()
+
         return VBox(8.0).apply {
             padding = Insets(12.0, 16.0, 12.0, 16.0)
             styleClass.add("content-card")
@@ -252,14 +253,6 @@ class PropertiesPane(
         }
     }
 
-    /**
-     * Foreign property entry no longer needs an HMRC connection just to be
-     * *shown* — only 2026-27+ submissions need one, and we don't know the
-     * chosen tax year until the user has picked it. So selecting either
-     * radio just reveals the relevant fields; any HMRC connection check
-     * happens later, in addForeignPropertyViaHmrc(), conditional on the tax
-     * year.
-     */
     private fun handleTypeSelected() {
         if (ukRadio.isSelected) revealUkFields() else revealForeignFields()
     }
@@ -289,17 +282,20 @@ class PropertiesPane(
         updateForeignHint(selectedTaxYear)
     }
 
+    /**
+     * Every LibreMTD-supported tax year (2026-27 onwards — see
+     * database.availableTaxYears) requires HMRC registration for a new
+     * foreign property, so this hint no longer needs to branch on the
+     * selected year; it's kept as a hint (rather than removed) because it's
+     * still useful to tell the user what's about to happen.
+     */
     private fun updateForeignHint(taxYear: String?) {
         if (!::foreignHintLabel.isInitialized) return
-        foreignHintLabel.text = when {
-            taxYear.isNullOrBlank() -> ""
-            foreignPropertyRequiresHmrc(taxYear) ->
-                "For $taxYear this property will be registered with HMRC when you click " +
-                        "\"Add property\", and assigned an HMRC property ID which will appear in the table below."
-            else ->
-                "For $taxYear, HMRC's foreign property registration isn't available. " +
-                        "This property will be set up in LibreMTD only."
-        }
+        foreignHintLabel.text = if (taxYear.isNullOrBlank())
+            ""
+        else
+            "This property will be registered with HMRC when you click \"Add property\", " +
+                    "and assigned an HMRC property ID which will appear in the table below."
     }
 
     // ── Add ─────────────────────────────────────────────────────────────
@@ -348,32 +344,13 @@ class PropertiesPane(
             !ISO_ALPHA3_REGEX.matches(country) ->
                 Dialogs.showError("Please enter a valid three-letter country code (e.g. FRA).")
             taxYear.isNullOrBlank() -> Dialogs.showError("Please select a tax year.")
-            foreignPropertyRequiresHmrc(taxYear) -> addForeignPropertyViaHmrc(address, country, taxYear, ftcr)
-            else -> addForeignPropertyLocalOnly(address, country, taxYear, ftcr)
+            else -> addForeignPropertyViaHmrc(address, country, taxYear, ftcr)
         }
     }
 
-    /** 2025-26 and earlier: no HMRC-side record exists for this endpoint, so
-     *  just store the property locally. No connection check is needed. */
-    private fun addForeignPropertyLocalOnly(address: String, country: String, taxYear: String, ftcr: Boolean) {
-        addBtn.isDisable = true
-        scope.launch(Dispatchers.IO) {
-            val property = PropertyRepository.create(
-                userId = userId, address = address,
-                propertyType = PropertyType.FOREIGN, countryCode = country,
-            )
-            ForeignPropertyElectionRepository.set(property.id, taxYear, ftcr)
-            withContext(Dispatchers.JavaFx) {
-                addBtn.isDisable = false
-                loadProperties()
-                clearForm()
-                onStatusChange("Foreign property added ✓")
-            }
-        }
-    }
-
-    /** 2026-27 onwards: HMRC issues a UUID propertyID for the foreign
-     *  property, so a live connection and business ID are required. */
+    /** HMRC issues a UUID propertyID for every foreign property in every
+     *  LibreMTD-supported tax year, so a live connection and business ID
+     *  are always required to add one — there is no local-only path. */
     private fun addForeignPropertyViaHmrc(address: String, country: String, taxYear: String, ftcr: Boolean) {
         addBtn.isDisable = true
         scope.launch(Dispatchers.IO) {
@@ -431,8 +408,232 @@ class PropertiesPane(
         }
     }
 
+    // ── Edit a UK property's address/postcode ──────────────────────────────
+
+    /**
+     * Opens an "Edit property" dialogue pre-filled with [selected]'s current
+     * address and postcode, validates the input the same way as the "Add
+     * property" form, and — if the user confirms — persists the change via
+     * [PropertyRepository.updateUk].
+     *
+     * This is a plain in-place correction: no confirmation-of-intent dialog
+     * beyond the edit form itself, no tax-year lock, and no HMRC call —
+     * see PropertyRepository.updateUk's doc comment for why that is correct
+     * for UK properties specifically.
+     */
+    private fun handleEditUk(selected: Property, onEdited: () -> Unit) {
+        val edited = promptForUkEdit(selected) ?: return
+
+        scope.launch(Dispatchers.IO) {
+            PropertyRepository.updateUk(selected.id, edited.address, edited.postcode)
+            withContext(Dispatchers.JavaFx) {
+                onEdited()
+                onStatusChange("Property updated ✓")
+            }
+        }
+    }
+
+    /**
+     * Shows the edit dialog and returns the corrected values, or null if
+     * the user cancelled. Validation mirrors handleAddUk(): re-uses the
+     * same UK_POSTCODE_REGEX, and the OK button is blocked (via an
+     * ActionEvent filter that consumes the event) from closing the dialog
+     * until the fields are valid, so the user sees the error inline rather
+     * than the dialog vanishing and a separate error alert appearing.
+     */
+    private fun promptForUkEdit(selected: Property): UkEditDetails? {
+        val addressField  = TextField(selected.address).apply { prefWidth = 300.0 }
+        val postcodeField = TextField(selected.postcode ?: "").apply { prefWidth = 120.0 }
+        val errorLabel    = wrappingLabel("").apply { styleClass.add("status-error") }
+
+        val grid = GridPane().apply {
+            hgap = 10.0; vgap = 10.0
+            padding = Insets(4.0)
+            addRow(0, Label("Address:"), addressField)
+            addRow(1, Label("Postcode:"), postcodeField)
+        }
+
+        val dialog = Dialog<UkEditDetails?>().apply {
+            title = "Edit property"
+            headerText = "Edit ${selected.address}"
+            dialogPane.content = VBox(8.0, grid, errorLabel).also { it.padding = Insets(4.0) }
+            dialogPane.buttonTypes.addAll(ButtonType.OK, ButtonType.CANCEL)
+
+            val okButton = dialogPane.lookupButton(ButtonType.OK)
+            okButton.addEventFilter(ActionEvent.ACTION) { event ->
+                val address  = addressField.text.trim()
+                val postcode = postcodeField.text.trim().uppercase()
+                val errors = mutableListOf<String>()
+                if (address.isBlank()) errors += "Please enter an address."
+                if (postcode.isBlank()) errors += "Please enter a postcode."
+                else if (!UK_POSTCODE_REGEX.matches(postcode))
+                    errors += "Please enter a valid UK postcode (e.g. SW1A 1AA)."
+
+                if (errors.isNotEmpty()) {
+                    errorLabel.text = errors.joinToString("\n")
+                    event.consume()
+                }
+            }
+
+            setResultConverter { button ->
+                if (button == ButtonType.OK)
+                    UkEditDetails(addressField.text.trim(), postcodeField.text.trim().uppercase())
+                else
+                    null
+            }
+        }
+        dialog.applyAppIcons()
+
+        return dialog.showAndWait().orElse(null)
+    }
+
+    // ── Edit a foreign property's address ───────────────────────────────
+
+    /**
+     * Foreign property renaming, in two branches:
+     *
+     * - Not registered with HMRC (hmrcPropertyId == null): under LibreMTD's
+     *   normal Add Property flow this cannot happen any more — every
+     *   foreign property is now registered with HMRC at creation time (see
+     *   addForeignPropertyViaHmrc). This branch only matters for a property
+     *   that reached the database some other way, e.g. a direct sqlite3
+     *   edit or a future import feature — in that case this is a plain
+     *   local correction exactly like [handleEditUk].
+     * - Registered with HMRC: the address WAS sent to HMRC at registration,
+     *   so HMRC's own Update Foreign Property Details endpoint must be
+     *   called first (see ForeignPropertyClient.rename()). The local record
+     *   is only updated once HMRC confirms the change, so LibreMTD and HMRC
+     *   never disagree about the address — the same "HMRC first, then
+     *   local" pattern as [handleEndRegisteredForeignProperty].
+     *
+     * Country code is never offered for editing here: HMRC's Update Foreign
+     * Property Details endpoint has no field for it, so a wrong country
+     * code still requires the delete/re-register route.
+     */
+    private fun handleEditForeign(selected: Property, onEdited: () -> Unit) {
+        val edited = promptForForeignEdit(selected) ?: return
+
+        if (selected.hmrcPropertyId == null) {
+            scope.launch(Dispatchers.IO) {
+                PropertyRepository.updateForeignAddress(selected.id, edited.address)
+                withContext(Dispatchers.JavaFx) {
+                    onEdited()
+                    onStatusChange("Property updated ✓")
+                }
+            }
+            return
+        }
+
+        val taxYear = selected.hmrcRegisteredTaxYear
+        if (taxYear.isNullOrBlank()) {
+            Dialogs.showError(
+                "This property has an HMRC property ID but no recorded registration tax year " +
+                        "— likely registered before this tracking was added. It can't be safely " +
+                        "renamed with HMRC automatically. Please check its record on HMRC directly, " +
+                        "or if you know the tax year it was registered under, that can be backfilled " +
+                        "in the database.",
+                title = "Missing registration tax year",
+            )
+            return
+        }
+
+        scope.launch(Dispatchers.IO) {
+            val settings = requireConnectedSettingsOrShowError() ?: return@launch
+
+            val prefs = org.charlesatkinson.libremtd.ui.components.UiPreferences(userId)
+            val client = HmrcApiClient(
+                libreMtdUserId = userId,
+                isSandbox      = Config.hmrcSandbox,
+                oauth2Handler  = OAuth2Handler(
+                    clientId     = settings.clientId,
+                    clientSecret = settings.clientSecret,
+                    isSandbox    = Config.hmrcSandbox,
+                    prefs        = prefs,
+                ),
+                fraudHeaders   = FraudPreventionHeaders(),
+            )
+
+            val result = ForeignPropertyClient(client).rename(
+                nino         = settings.nino,
+                propertyId   = selected.hmrcPropertyId!!,
+                taxYear      = taxYear,
+                propertyName = edited.address,
+                context      = ClientContext(800, 600),
+                testScenario = if (Config.hmrcSandbox) "STATEFUL" else null,
+            )
+
+            when (result) {
+                is ApiResult.Success -> {
+                    PropertyRepository.updateForeignAddress(selected.id, edited.address)
+                    withContext(Dispatchers.JavaFx) {
+                        onEdited()
+                        onStatusChange("Foreign property renamed with HMRC and locally ✓")
+                    }
+                }
+                is ApiResult.Failure -> {
+                    withContext(Dispatchers.JavaFx) {
+                        Dialogs.showError(
+                            "Could not rename the property with HMRC, so the local address has " +
+                                    "not been changed either — this keeps LibreMTD and HMRC in sync.\n\n" +
+                                    result.message,
+                            title = "HMRC update failed",
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private fun promptForForeignEdit(selected: Property): ForeignEditDetails? {
+        val addressField = TextField(selected.address).apply { prefWidth = 300.0 }
+        val errorLabel    = wrappingLabel("").apply { styleClass.add("status-error") }
+
+        val noteText = if (selected.hmrcPropertyId != null)
+            "This will update the address with HMRC as well as locally. The country code cannot be changed here."
+        else
+            "This property is not registered with HMRC, so this change is local only. " +
+                    "The country code cannot be changed here."
+
+        val grid = GridPane().apply {
+            hgap = 10.0; vgap = 10.0
+            padding = Insets(4.0)
+            addRow(0, Label("Address:"), addressField)
+        }
+
+        val dialog = Dialog<ForeignEditDetails?>().apply {
+            title = "Edit property"
+            headerText = "Edit ${selected.address}"
+            dialogPane.content = VBox(8.0, grid, hintLabel(noteText), errorLabel).also { it.padding = Insets(4.0) }
+            dialogPane.buttonTypes.addAll(ButtonType.OK, ButtonType.CANCEL)
+
+            val okButton = dialogPane.lookupButton(ButtonType.OK)
+            okButton.addEventFilter(ActionEvent.ACTION) { event ->
+                val address = addressField.text.trim()
+                if (address.isBlank()) {
+                    errorLabel.text = "Please enter an address."
+                    event.consume()
+                }
+            }
+
+            setResultConverter { button ->
+                if (button == ButtonType.OK) ForeignEditDetails(addressField.text.trim()) else null
+            }
+        }
+        dialog.applyAppIcons()
+
+        return dialog.showAndWait().orElse(null)
+    }
+
     // ── Register an existing local-only foreign property with HMRC ────────
 
+    /**
+     * Registers a foreign property that exists locally without an HMRC
+     * propertyId. Under LibreMTD's normal Add Property flow this button
+     * should never be needed — every new foreign property is registered at
+     * creation time (see addForeignPropertyViaHmrc) — but it's kept as a
+     * recovery path for a property that reached the database some other
+     * way, e.g. a direct sqlite3 edit or a future import feature.
+     */
     private fun handleRegisterWithHmrc(selected: Property) {
         registerHmrcBtn.isDisable = true
         scope.launch(Dispatchers.IO) {
@@ -491,11 +692,10 @@ class PropertiesPane(
     }
 
     private fun promptForRegistrationTaxYear(): String? {
-        val eligibleYears = availableTaxYears().filter { foreignPropertyRequiresHmrc(it) }
+        val eligibleYears = availableTaxYears()
         if (eligibleYears.isEmpty()) {
             Dialogs.showError(
-                "None of the available tax years support foreign property registration with " +
-                        "HMRC yet (this becomes available from 2026-27 onwards).",
+                "No tax years are currently available to register this property under.",
                 title = "Not available",
             )
             return null
@@ -752,7 +952,8 @@ class PropertiesPane(
         }
         applyEndedRowStyling(table)
 
-        val endBtn = buildEndButton(table) { loadProperties() }
+        val editBtn   = buildEditUkButton(table) { loadProperties() }
+        val endBtn    = buildEndButton(table) { loadProperties() }
         val removeBtn = buildRemoveButton(table) { loadProperties() }
 
         return VBox(8.0).apply {
@@ -763,8 +964,46 @@ class PropertiesPane(
                 wrappingLabel("Your UK properties").apply { style = "-fx-font-weight: bold;" },
                 Separator(),
                 table,
-                HBox(10.0, endBtn, removeBtn),
+                HBox(10.0, editBtn, endBtn, removeBtn),
             )
+        }
+    }
+
+    /**
+     * Builds the "Edit…" button shown against the UK properties table.
+     * Selection is checked at click time (matching the End/Remove buttons'
+     * pattern below) rather than via a selection listener, since — unlike
+     * Register with HMRC or FTCR — there is no async eligibility check to
+     * run ahead of enabling it: any selected UK property can be edited.
+     */
+    private fun buildEditUkButton(table: TableView<Property>, onEdited: () -> Unit): Button {
+        return Button("Edit…").apply {
+            styleClass.add("primary-action-button")
+            setOnAction {
+                val selected = table.selectionModel.selectedItem
+                if (selected == null) {
+                    Dialogs.showError("Please select a property to edit.")
+                } else {
+                    handleEditUk(selected, onEdited)
+                }
+            }
+        }
+    }
+
+    /** As [buildEditUkButton], for the foreign properties table. Any
+     *  selected foreign property can be edited — eligibility for the HMRC
+     *  call (if any) is worked out inside handleEditForeign() itself. */
+    private fun buildEditForeignButton(table: TableView<Property>, onEdited: () -> Unit): Button {
+        return Button("Edit…").apply {
+            styleClass.add("primary-action-button")
+            setOnAction {
+                val selected = table.selectionModel.selectedItem
+                if (selected == null) {
+                    Dialogs.showError("Please select a property to edit.")
+                } else {
+                    handleEditForeign(selected, onEdited)
+                }
+            }
         }
     }
 
@@ -847,7 +1086,8 @@ class PropertiesPane(
             ftcrBtn.isDisable = selected == null
         }
 
-        val endBtn = buildEndButton(table) { loadProperties() }
+        val editBtn   = buildEditForeignButton(table) { loadProperties() }
+        val endBtn    = buildEndButton(table) { loadProperties() }
         val removeBtn = buildRemoveButton(table) { loadProperties() }
 
         return VBox(8.0).apply {
@@ -858,7 +1098,7 @@ class PropertiesPane(
                 wrappingLabel("Your foreign properties").apply { style = "-fx-font-weight: bold;" },
                 Separator(),
                 table,
-                HBox(10.0, registerHmrcBtn, ftcrBtn, endBtn, removeBtn),
+                HBox(10.0, editBtn, registerHmrcBtn, ftcrBtn, endBtn, removeBtn),
             )
         }
     }

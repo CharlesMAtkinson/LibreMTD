@@ -121,6 +121,78 @@ object PropertyRepository {
     }
 
     /**
+     * Corrects a UK property's address and/or postcode in place.
+     *
+     * This is deliberately a plain overwrite with no tax-year lock and no
+     * history row: a UK property's address is local reference data that is
+     * never transmitted to HMRC. There is nothing here for
+     * FinalDeclarationGuard to protect, since editing an address does not
+     * change any figure already submitted to HMRC.
+     *
+     * Throws [IllegalArgumentException] if [id] does not identify a live
+     * property, or if it identifies a foreign property — use
+     * [updateForeignAddress] for those instead.
+     */
+    fun updateUk(id: Int, address: String, postcode: String): Property {
+        return transaction {
+            val current = Properties
+                .selectAll()
+                .where { (Properties.id eq id) and Properties.supersededAt.isNull() }
+                .singleOrNull()
+                ?: throw IllegalArgumentException("Property $id not found")
+
+            require(current[Properties.propertyType] == PropertyType.UK.name) {
+                "updateUk can only be used for UK properties"
+            }
+
+            Properties.update({ Properties.id eq id }) {
+                it[Properties.address]  = address
+                it[Properties.postcode] = postcode
+            }
+
+            findById(id)!!
+        }
+    }
+
+    /**
+     * Corrects a foreign property's address in place. Unlike [updateUk],
+     * this only ever touches the local database — the caller (PropertiesPane)
+     * is responsible for calling HMRC's Update Foreign Property Details
+     * endpoint first when the property is registered with HMRC, and only
+     * calling this once that has succeeded, so the local record never says
+     * something different from what HMRC holds. See
+     * ForeignPropertyClient.rename().
+     *
+     * The country code is deliberately not editable here: HMRC's Update
+     * Foreign Property Details endpoint has no field for it, so there is no
+     * way to keep a country code correction in sync with HMRC via this
+     * route — a wrong country code still needs the delete/re-register path.
+     *
+     * Throws [IllegalArgumentException] if [id] does not identify a live
+     * property, or if it identifies a UK property — use [updateUk] for
+     * those instead.
+     */
+    fun updateForeignAddress(id: Int, address: String): Property {
+        return transaction {
+            val current = Properties
+                .selectAll()
+                .where { (Properties.id eq id) and Properties.supersededAt.isNull() }
+                .singleOrNull()
+                ?: throw IllegalArgumentException("Property $id not found")
+
+            require(current[Properties.propertyType] == PropertyType.FOREIGN.name) {
+                "updateForeignAddress can only be used for foreign properties"
+            }
+
+            Properties.update({ Properties.id eq id }) {
+                it[Properties.address] = address
+            }
+
+            findById(id)!!
+        }
+    }
+
+    /**
      * Records that a foreign property has been registered with HMRC and
      * issued [hmrcPropertyId] — either at creation time (2026-27+ properties
      * added directly), or later via a separate "Register with HMRC" action

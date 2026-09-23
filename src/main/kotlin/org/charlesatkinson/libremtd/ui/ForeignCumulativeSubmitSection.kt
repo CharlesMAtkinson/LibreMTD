@@ -198,14 +198,19 @@ class ForeignCumulativeSubmitSection(
     }
 
     /**
-     * True once taxYear reaches 2026-27, when HMRC switches from countryCode
-     * to propertyId as the identifier within the foreignProperty array.
-     * taxYear is always "YYYY-YY" — comparing the first 4 characters as a
-     * string sorts identically to comparing the start year numerically.
+     * Builds one [ForeignPropertyItem] per foreign property that has income
+     * or expenses recorded for [taxYear], identified by HMRC's propertyId.
+     *
+     * LibreMTD only supports tax years from 2026-27 onwards (see
+     * database.availableTaxYears), which is the only range HMRC identifies
+     * foreign properties by propertyId in this endpoint rather than
+     * countryCode — so every property submitted here must already have one,
+     * which in turn means it must already be registered with HMRC (see
+     * PropertiesPane.addForeignPropertyViaHmrc). A property missing that is
+     * reported as a blocking error rather than silently skipped, since
+     * silently omitting a property's real income/expenses from a tax
+     * submission would misrepresent the figures.
      */
-    private fun usesPropertyId(taxYear: String): Boolean =
-        taxYear.take(4) >= "2026"
-
     private fun buildForeignPropertyItems(taxYear: String): BuildResult {
         val allIncome   = IncomePropertyForeignRepository.currentForeignPropertyIncomeForYear(userId, taxYear)
         val allExpenses = ExpensePropertyForeignRepository.currentForeignPropertyExpensesForYear(userId, taxYear)
@@ -219,34 +224,14 @@ class ForeignCumulativeSubmitSection(
         val errors = mutableListOf<String>()
 
         for (property in foreignProperties) {
-            val incomeEntries   = allIncome.filter { it.propertyId == property.id }
-            val expenseEntries  = allExpenses.filter { it.propertyId == property.id }
+            val incomeEntries  = allIncome.filter { it.propertyId == property.id }
+            val expenseEntries = allExpenses.filter { it.propertyId == property.id }
             if (incomeEntries.isEmpty() && expenseEntries.isEmpty()) continue
 
-            val identifierError: String?
-            var countryCode: String? = null
-            var hmrcPropertyId: String? = null
-
-            if (usesPropertyId(taxYear)) {
-                if (property.hmrcPropertyId == null) {
-                    identifierError =
-                        "${property.address}: not registered with HMRC yet — cannot include in a " +
-                                "$taxYear submission (register the property with HMRC first)."
-                } else {
-                    hmrcPropertyId = property.hmrcPropertyId
-                    identifierError = null
-                }
-            } else {
-                if (property.countryCode == null) {
-                    identifierError = "${property.address}: missing country code."
-                } else {
-                    countryCode = property.countryCode
-                    identifierError = null
-                }
-            }
-
-            if (identifierError != null) {
-                errors += identifierError
+            val hmrcPropertyId = property.hmrcPropertyId
+            if (hmrcPropertyId == null) {
+                errors += "${property.address}: not registered with HMRC yet — cannot include in a " +
+                        "$taxYear submission (register the property with HMRC first)."
                 continue
             }
 
@@ -295,10 +280,9 @@ class ForeignCumulativeSubmitSection(
             if (incomeEntries.isNotEmpty() && incomeBody == null) continue // election error already recorded
 
             items += ForeignPropertyItem(
-                countryCode    = countryCode,
-                propertyId     = hmrcPropertyId,
-                income         = incomeBody,
-                expenses       = expensesBody,
+                propertyId = hmrcPropertyId,
+                income     = incomeBody,
+                expenses   = expensesBody,
             )
         }
 

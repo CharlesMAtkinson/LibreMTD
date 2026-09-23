@@ -23,13 +23,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 
 private val logger = KotlinLogging.logger {}
-
-@OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
-private val json = Json { ignoreUnknownKeys = true; prettyPrint = false; explicitNulls = false }
 
 // ── Request model ─────────────────────────────────────────────────────────────
 
@@ -41,18 +37,20 @@ data class ForeignPropertyCumulativeRequest(
 )
 
 /**
- * One entry in the foreignProperty array.
- * Exactly one of [countryCode] (tax years up to 2025-26) or [propertyId]
- * (tax years 2026-27 onward) should be set — never both, never neither.
- * Deciding which applies for a given taxYear is the caller's responsibility,
- * not this client's.
+ * One entry in the foreignProperty array, identified by HMRC's propertyId.
+ *
+ * Earlier HMRC API versions identified foreign properties in this endpoint
+ * by countryCode instead, for tax years up to 2025-26 — which is why this
+ * field used to be optional and share the model with a countryCode field.
+ * LibreMTD no longer supports tax years before 2026-27 (see
+ * database.availableTaxYears), so propertyId is now always present and the
+ * countryCode alternative has been removed rather than left unused.
  */
 @Serializable
 data class ForeignPropertyItem(
-    val countryCode: String? = null,
-    val propertyId:  String? = null,
-    val income:      ForeignPropertyIncomeBody?   = null,
-    val expenses:    ForeignPropertyExpensesBody? = null,
+    val propertyId: String,
+    val income:     ForeignPropertyIncomeBody?   = null,
+    val expenses:   ForeignPropertyExpensesBody? = null,
 )
 
 @Serializable
@@ -88,11 +86,11 @@ data class ForeignPropertyExpensesBody(
 class PropertyForeignSubmissionClient(private val apiClient: HmrcApiClient) {
 
     /**
-     * Submits a cumulative foreign property period summary for 2025-26 onwards.
+     * Submits a cumulative foreign property period summary.
      * Uses PUT — idempotent, replaces any previous submission for the tax year.
      *
-     * [fromDate] is always the tax year start, e.g. "2025-04-06".
-     * [toDate]   is the end of the latest quarter being reported, e.g. "2025-07-05".
+     * [fromDate] is always the tax year start, e.g. "2026-04-06".
+     * [toDate]   is the end of the latest quarter being reported, e.g. "2026-07-05".
      *
      * Note: HMRC's documentation for this endpoint lists 400, 403 and 404 as
      * response codes but no 2xx — 204 is assumed by analogy with the UK
@@ -101,12 +99,11 @@ class PropertyForeignSubmissionClient(private val apiClient: HmrcApiClient) {
      *
      * @param nino            User's National Insurance number
      * @param businessId      HMRC business ID for the foreign property business
-     * @param taxYear         Format "2025-26"
+     * @param taxYear         Format "2026-27"
      * @param fromDate        Tax year start date, format "YYYY-MM-DD"
      * @param toDate          Quarter end date, format "YYYY-MM-DD"
      * @param foreignProperty One entry per foreign property being reported —
-     *                        see [ForeignPropertyItem] for the countryCode/
-     *                        propertyId split by tax year
+     *                        see [ForeignPropertyItem]
      */
     suspend fun submitCumulative(
         nino:            String,

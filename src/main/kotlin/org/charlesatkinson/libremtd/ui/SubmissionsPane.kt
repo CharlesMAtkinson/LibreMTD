@@ -24,6 +24,7 @@ import mu.KotlinLogging
 import org.charlesatkinson.libremtd.database.SettingsRepository
 import org.charlesatkinson.libremtd.network.ClientContext
 import org.charlesatkinson.libremtd.network.HmrcApiClient
+import org.charlesatkinson.libremtd.ui.components.RefreshableRoot
 import org.charlesatkinson.libremtd.ui.components.TaxYearSelector
 import org.charlesatkinson.libremtd.ui.components.wrappingLabel
 
@@ -37,18 +38,6 @@ class SubmissionsPane(
     private val getContext:         () -> ClientContext,
     private val onStatusChange:     (String) -> Unit,
 ) {
-
-    /**
-     * Wrapper placed in the pane cache by MainWindow.
-     * Holds a back-reference to the SubmissionsPane so that MainWindow can call
-     * refresh() without needing to cast to an internal layout type.
-     */
-    class RefreshableRoot(vbox: VBox, val refreshablePane: SubmissionsPane) : VBox() {
-        init {
-            children.add(vbox)
-            VBox.setVgrow(vbox, javafx.scene.layout.Priority.ALWAYS)
-        }
-    }
 
     val root: RefreshableRoot
 
@@ -88,7 +77,7 @@ class SubmissionsPane(
 
     init {
         val innerVBox = buildUI()
-        root = RefreshableRoot(innerVBox, this)
+        root = RefreshableRoot(innerVBox) { refresh() }
     }
 
     /**

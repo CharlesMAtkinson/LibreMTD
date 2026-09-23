@@ -20,6 +20,7 @@ package org.charlesatkinson.libremtd.database
 import org.charlesatkinson.libremtd.database.taxYearForDate
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Test
 
 class TaxYearUtilsTest {
@@ -34,5 +35,25 @@ class TaxYearUtilsTest {
     fun `tax year containing April 6 is the following year`() {
         val result = taxYearForDate("2026-04-06")
         assertEquals("2026-27", result)
+    }
+
+    @Test
+    fun `availableTaxYears defaults to starting from 2026-27`() {
+        // LibreMTD deliberately does not support 2025-26 or earlier — see
+        // availableTaxYears' doc comment for why.
+        val years = availableTaxYears()
+        assertEquals("2026-27", years.first())
+    }
+
+    @Test
+    fun `availableTaxYears does not include 2025-26`() {
+        val years = availableTaxYears()
+        assertFalse(years.contains("2025-26"))
+    }
+
+    @Test
+    fun `availableTaxYears respects an explicit firstYear`() {
+        val years = availableTaxYears(firstYear = 2026)
+        assertEquals("2026-27", years.first())
     }
 }

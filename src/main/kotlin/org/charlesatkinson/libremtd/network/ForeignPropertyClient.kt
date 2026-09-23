@@ -20,12 +20,11 @@
 package org.charlesatkinson.libremtd.network
 
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 import org.charlesatkinson.libremtd.utils.ApiResult
+import java.net.http.HttpResponse
 
 private val logger = KotlinLogging.logger {}
-private val json   = Json { ignoreUnknownKeys = true }
 
 @Serializable
 data class CreateForeignPropertyRequest(
@@ -38,6 +37,18 @@ data class CreateForeignPropertyResponse(
     val propertyId: String,
 )
 
+/**
+ * Body for HMRC's Update Foreign Property Details endpoint. propertyName is
+ * the only required field. endDate/endReason are used together to end a
+ * property's letting (see [ForeignPropertyClient.end]); omitting both — as
+ * [ForeignPropertyClient.rename] does — is how HMRC's own sample payload
+ * shows a plain rename being requested.
+ *
+ * This relies on the shared `json` instance in network/Json.kt having
+ * explicitNulls = false: without it, kotlinx.serialization would still emit
+ * "endDate": null, "endReason": null in a rename-only request, which is not
+ * the same request HMRC's documentation shows.
+ */
 @Serializable
 data class UpdateForeignPropertyRequest(
     val propertyName: String,
@@ -131,6 +142,60 @@ class ForeignPropertyClient(private val apiClient: HmrcApiClient) {
     }
 
     /**
+     * Calls Update Foreign Property Details with propertyName only (no
+     * endDate/endReason), to correct a foreign property's address after it
+     * has already been registered with HMRC. [taxYear] must be the tax year
+     * the property was originally registered under (see
+     * [ForeignPropertyClient.create]) — the same rule as [end] — since the
+     * endpoint is scoped to that year in its path regardless of which tax
+     * year is currently being viewed.
+     *
+     * The endpoint has no field for country code, so this cannot be used to
+     * correct that; see [org.charlesatkinson.libremtd.database.PropertyRepository.updateForeignAddress].
+     */
+    suspend fun rename(
+        nino: String,
+        propertyId: String,
+        taxYear: String,
+        propertyName: String,
+        context: ClientContext,
+        testScenario: String? = null,
+    ): ApiResult<Unit> {
+        val extraHeaders = if (testScenario != null)
+            mapOf("Gov-Test-Scenario" to testScenario)
+        else
+            emptyMap()
+
+        val body = json.encodeToString(
+            UpdateForeignPropertyRequest.serializer(),
+            UpdateForeignPropertyRequest(propertyName = propertyName),
+        )
+
+        val response = apiClient.put(
+            path         = "/individuals/business/property/foreign/$nino/details/$propertyId/$taxYear",
+            body         = body,
+            context      = context,
+            version      = "6.0",
+            extraHeaders = extraHeaders,
+        )
+
+        if (response == null) {
+            val msg = "Network error — could not reach HMRC. Check your internet connection."
+            logger.error { msg }
+            return ApiResult.Failure(msg)
+        }
+
+        if (response.statusCode() !in listOf(200, 201, 202, 204)) {
+            val msg = defaultErrorMessage(response)
+            logger.error { "Rename foreign property failed: ${response.statusCode()} — ${response.body()}" }
+            return ApiResult.Failure(msg)
+        }
+
+        logger.info { "Foreign property renamed: propertyId=$propertyId, taxYear=$taxYear" }
+        return ApiResult.Success(Unit)
+    }
+
+    /**
      * Calls Update Foreign Property Details with an endDate/endReason, which
      * is how a foreign property is "ended" on HMRC's side — there is no
      * separate delete endpoint. [taxYear] must be the tax year the property
@@ -178,17 +243,26 @@ class ForeignPropertyClient(private val apiClient: HmrcApiClient) {
         }
 
         if (response.statusCode() !in listOf(200, 201, 202, 204)) {
-            val msg = try {
-                val err = json.decodeFromString<HmrcErrorBody>(response.body())
-                err.message ?: "HMRC returned HTTP ${response.statusCode()}."
-            } catch (e: Exception) {
-                "HMRC returned HTTP ${response.statusCode()}: ${response.body().trim()}"
-            }
+            val msg = defaultErrorMessage(response)
             logger.error { "End foreign property failed: ${response.statusCode()} — ${response.body()}" }
             return ApiResult.Failure(msg)
         }
 
         logger.info { "Foreign property ended: propertyId=$propertyId, taxYear=$taxYear, reason=${endReason.apiValue}" }
         return ApiResult.Success(Unit)
+    }
+
+    /**
+     * Shared non-2xx error message parsing for [rename] and [end], both of
+     * which call the same underlying HMRC endpoint and so get the same
+     * shape of error body back. [create] is kept separate since it also
+     * special-cases the FORMAT_COUNTRY_CODE error code, which cannot occur
+     * for the other two (neither sends a country code).
+     */
+    private fun defaultErrorMessage(response: HttpResponse<String>): String = try {
+        val err = json.decodeFromString<HmrcErrorBody>(response.body())
+        err.message ?: "HMRC returned HTTP ${response.statusCode()}."
+    } catch (e: Exception) {
+        "HMRC returned HTTP ${response.statusCode()}: ${response.body().trim()}"
     }
 }

@@ -30,10 +30,17 @@ fun currentTaxYear(): String {
 /**
  * Returns a list of MTD tax year strings from [firstYear] up to and including
  * the current tax year, in ascending order.
- * [firstYear] should be the start year of the earliest supported tax year,
- * e.g. 2023 for "2023-24".
+ *
+ * [firstYear] defaults to 2026, i.e. the earliest selectable year is
+ * "2026-27". LibreMTD deliberately does not support 2025-26 or earlier:
+ * HMRC's foreign property registration, renaming and FTCR submission all
+ * depend on the propertyId-based scheme that only exists from 2026-27
+ * onwards, and maintaining a second, country-code-based code path for one
+ * earlier year was judged not worth the complexity — see the development
+ * log entry on dropping 2025-26 support for the full reasoning, including
+ * the HMRC RULE_DUPLICATE_COUNTRY_CODE issue that prompted it.
  */
-fun availableTaxYears(firstYear: Int = 2025): List<String> {
+fun availableTaxYears(firstYear: Int = 2026): List<String> {
     val today = LocalDate.now()
     val currentStartYear = if (today.monthValue > 4 || (today.monthValue == 4 && today.dayOfMonth >= 6))
         today.year else today.year - 1

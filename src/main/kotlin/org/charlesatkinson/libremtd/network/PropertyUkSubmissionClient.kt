@@ -21,13 +21,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 
 private val logger = KotlinLogging.logger {}
-
-@OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
-private val json = Json { ignoreUnknownKeys = true; prettyPrint = false; explicitNulls = false }
 
 @Serializable
 data class UkPropertyCumulativeRequest(
@@ -123,4 +119,3 @@ class PropertyUkSubmissionClient(private val apiClient: HmrcApiClient) {
         }
     }
 }
-

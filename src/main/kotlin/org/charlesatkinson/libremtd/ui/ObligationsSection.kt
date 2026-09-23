@@ -29,6 +29,7 @@ import javafx.scene.layout.HBox
 import javafx.scene.layout.VBox
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
@@ -49,6 +50,10 @@ class ObligationsSection(
     private val getContext:         () -> ClientContext,
 ) {
     private val isSandbox: Boolean = Config.hmrcSandbox
+
+    /** Minimum time "Refreshing…" stays on screen before being replaced by
+     *  the outcome message, so a fast reply doesn't flash past unnoticed. */
+    private val minRefreshDisplayMs = 3_000L
 
     lateinit var table:  TableView<Obligation>
         private set
@@ -117,6 +122,27 @@ class ObligationsSection(
             return
         }
 
+        // Shown the instant a refresh starts, on the FX thread regardless of
+        // which thread called refresh(). Held on screen for at least
+        // minRefreshDisplayMs below — updating the *table* is never delayed,
+        // only this status text, so the message has time to be read even
+        // when the underlying fetch (e.g. HMRC's sandbox) returns almost
+        // instantly.
+        Platform.runLater {
+            status.text = "Refreshing…"
+            status.setStatusStyle("hint-label")
+        }
+        val refreshStartedAt = System.currentTimeMillis()
+
+        suspend fun showStatusAfterMinDisplay(text: String, styleClass: String) {
+            val elapsed = System.currentTimeMillis() - refreshStartedAt
+            if (elapsed < minRefreshDisplayMs) delay(minRefreshDisplayMs - elapsed)
+            Platform.runLater {
+                status.text = text
+                status.setStatusStyle(styleClass)
+            }
+        }
+
         val testScenario = if (isSandbox) Config.sandboxObligationsScenario else null
         if (isSandbox && testScenario != null) {
             logger.info { "ObligationsSection.refresh: using Gov-Test-Scenario=$testScenario" }
@@ -126,10 +152,12 @@ class ObligationsSection(
             val settings = withContext(Dispatchers.IO) { settingsRepository.load(userId) }
             val nino = settings?.nino?.takeIf { it.isNotBlank() } ?: run {
                 logger.warn { "ObligationsSection.refresh: skipped — NINO not set" }
+                showStatusAfterMinDisplay("NINO not set — go to Settings", "status-error")
                 return@launch
             }
             val client = getApiClient() ?: run {
                 logger.warn { "ObligationsSection.refresh: skipped — API client returned null" }
+                showStatusAfterMinDisplay("Could not connect — check Settings", "status-error")
                 return@launch
             }
 
@@ -146,34 +174,37 @@ class ObligationsSection(
                 testScenario = testScenario,
             )
 
-            Platform.runLater {
-                when (result) {
-                    is ApiResult.Failure -> {
-                        status.text = "Could not load obligations: ${result.message}"
-                        status.setStatusStyle("status-error")
-                    }
-                    is ApiResult.Success -> {
-                        val obligations = result.data
-                        table.items.setAll(obligations)
-                        val fulfilled = obligations.count { it.status == ObligationStatus.Fulfilled }
-                        status.text = "$fulfilled of ${obligations.size} quarters fulfilled"
-                        status.setStatusStyle(
-                            if (fulfilled == obligations.size) "status-success" else "hint-label"
-                        )
-                        scope.launch(Dispatchers.IO) {
-                            val properties = PropertyRepository.findByUser(userId)
-                            if (properties.isNotEmpty()) {
-                                obligations.forEach { obligation ->
-                                    PeriodRepository.upsert(
-                                        taxYear   = taxYear,
-                                        periodKey = obligation.periodKey,
-                                        startDate = obligation.start,
-                                        endDate   = obligation.end,
-                                        dueDate   = obligation.due,
-                                    )
-                                }
-                                logger.info { "Persisted ${obligations.size} periods for $taxYear" }
+            when (result) {
+                is ApiResult.Failure -> {
+                    showStatusAfterMinDisplay("Could not load obligations: ${result.message}", "status-error")
+                }
+                is ApiResult.Success -> {
+                    val obligations = result.data
+
+                    // Table updates immediately — no reason to hold this
+                    // back while the status message's minimum display time
+                    // finishes elapsing.
+                    Platform.runLater { table.items.setAll(obligations) }
+
+                    val fulfilled = obligations.count { it.status == ObligationStatus.Fulfilled }
+                    showStatusAfterMinDisplay(
+                        "$fulfilled of ${obligations.size} quarters fulfilled",
+                        if (fulfilled == obligations.size) "status-success" else "hint-label",
+                    )
+
+                    scope.launch(Dispatchers.IO) {
+                        val properties = PropertyRepository.findByUser(userId)
+                        if (properties.isNotEmpty()) {
+                            obligations.forEach { obligation ->
+                                PeriodRepository.upsert(
+                                    taxYear   = taxYear,
+                                    periodKey = obligation.periodKey,
+                                    startDate = obligation.start,
+                                    endDate   = obligation.end,
+                                    dueDate   = obligation.due,
+                                )
                             }
+                            logger.info { "Persisted ${obligations.size} periods for $taxYear" }
                         }
                     }
                 }

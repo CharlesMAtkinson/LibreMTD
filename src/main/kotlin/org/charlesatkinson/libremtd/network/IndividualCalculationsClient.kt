@@ -20,12 +20,10 @@ package org.charlesatkinson.libremtd.network
 import kotlinx.coroutines.delay
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 import org.charlesatkinson.libremtd.utils.ApiResult
 
 private val logger = KotlinLogging.logger {}
-private val json   = Json { ignoreUnknownKeys = true }
 
 // ── Response models ───────────────────────────────────────────────────────────
 //
