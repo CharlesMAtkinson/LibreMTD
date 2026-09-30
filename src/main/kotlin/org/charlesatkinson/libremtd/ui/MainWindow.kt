@@ -80,6 +80,49 @@ enum class NavDestination(val label: String, val navLabel: String = label) {
 // connection / settings state that may change between visits.
 private val UNCACHED_DESTINATIONS = setOf(NavDestination.HmrcConnect)
 
+/**
+ * Resolves the pane to show for [dest]: builds a fresh pane for
+ * destinations in [uncached], otherwise reuses a pane from [cache] —
+ * building and caching it on first visit.
+ *
+ * When a pane is reused from [cache] (i.e. this is NOT its first visit)
+ * and it is a [RefreshableRoot], [RefreshableRoot.refresh] is called so
+ * that data which may have changed since the pane was originally built —
+ * for example, HMRC periods fetched later from a different pane — is
+ * picked up. A freshly built pane is deliberately not also refreshed
+ * immediately, since its own construction already loaded whatever data
+ * existed at that moment; refreshing it again straight away would be
+ * redundant.
+ *
+ * This fixes the bug where, e.g., IncomePropertyUkPane's PeriodSelector
+ * only ever loaded periods once, at first visit — visiting Submissions
+ * afterwards (which fetches and persists periods from HMRC) had no way to
+ * reach an already-cached IncomePropertyUkPane, so it kept showing
+ * "No periods yet" even once periods genuinely existed. Previously the
+ * only refresh trigger for cached panes was [MainWindow.notifyConnected],
+ * which only fires once, right at the moment of a successful HMRC
+ * connection — not on every later visit.
+ *
+ * Extracted as a standalone, generically-typed function (rather than
+ * inlined in [MainWindow.navigateTo]) so it can be unit tested without a
+ * live JavaFX Stage/Scene — see MainWindowPaneResolutionTest.
+ */
+internal fun <D> resolvePane(
+    dest:     D,
+    uncached: Set<D>,
+    cache:    MutableMap<D, javafx.scene.Node>,
+    build:    (D) -> javafx.scene.Node,
+): javafx.scene.Node {
+    if (dest in uncached) return build(dest)
+
+    val wasAlreadyCached = cache.containsKey(dest)
+    val pane = cache.getOrPut(dest) { build(dest) }
+    if (wasAlreadyCached && pane is RefreshableRoot) {
+        pane.refresh()
+    }
+    return pane
+}
+
 class MainWindow(
     private val scope:              CoroutineScope,
     private val stage:              Stage,
@@ -294,11 +337,7 @@ class MainWindow(
     private fun navigateTo(dest: NavDestination) {
         currentNav = dest
         try {
-            val pane = if (dest in UNCACHED_DESTINATIONS) {
-                buildFreshPane(dest)
-            } else {
-                paneCache.getOrPut(dest) { buildFreshPane(dest) }
-            }
+            val pane = resolvePane(dest, UNCACHED_DESTINATIONS, paneCache, ::buildFreshPane)
             contentArea.center = pane
             setStatus("Viewing: ${dest.label}")
         } catch (e: Exception) {
@@ -406,11 +445,16 @@ class MainWindow(
      * refresh() on every cached pane that needs to reload data not known
      * at construction time — periods and obligations, chiefly — regardless
      * of which pane it is, by looking for the shared RefreshableRoot
-     * wrapper rather than checking each destination by name. Previously
-     * this only refreshed SubmissionsPane specifically; the four income/
-     * expense panes with a PeriodSelector had the same need but weren't
-     * covered, which is why their period dropdowns stayed empty until the
-     * user logged out and back in even after connecting to HMRC.
+     * wrapper rather than checking each destination by name.
+     *
+     * This complements — rather than duplicates — the refresh that
+     * [resolvePane] now performs on every revisit to an already-cached
+     * pane: this one covers panes that were already cached BEFORE the
+     * connection succeeded (so they can pick up newly-available data
+     * without the user needing to navigate away and back), while
+     * [resolvePane]'s covers panes revisited after data has changed for
+     * some other reason (e.g. periods fetched from a separate visit to
+     * Submissions).
      */
     private fun notifyConnected() {
         paneCache.values.filterIsInstance<RefreshableRoot>().forEach { it.refresh() }

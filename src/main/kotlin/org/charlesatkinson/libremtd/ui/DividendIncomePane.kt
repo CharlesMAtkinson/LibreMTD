@@ -43,6 +43,7 @@ import org.charlesatkinson.libremtd.ui.components.TaxYearSelector
 import org.charlesatkinson.libremtd.ui.components.wrappingLabel
 import org.charlesatkinson.libremtd.ui.components.infoPopup
 import org.charlesatkinson.libremtd.ui.components.hintLabel
+import org.charlesatkinson.libremtd.ui.components.wrongTaxYearMessage
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
 
@@ -74,8 +75,12 @@ class DividendIncomePane(
     private val ukAmountField    = TextField()
     private val ukDescField      = TextField()
     private val ukDateField      = TextField()
-    private var ukAddBtn: Button?    = null
-    private var ukDeleteBtn: Button? = null
+    private var ukAddBtn: Button?       = null
+    private var ukCancelEditBtn: Button? = null
+    private var ukEditBtn: Button?      = null
+    private var ukDeleteBtn: Button?    = null
+    private var editingUkEntryId: Int?  = null
+    private val ukFormHeading = wrappingLabel("New entry").apply { style = "-fx-font-weight: bold;" }
 
     // --- UK dividends — special types ---
     private val scalarEntries        = FXCollections.observableArrayList<IncomeDividendEntry>()
@@ -84,8 +89,12 @@ class DividendIncomePane(
     private val scalarAmountField    = TextField()
     private val scalarRefField       = TextField()
     private val scalarDateField      = TextField()
-    private var scalarAddBtn: Button?    = null
-    private var scalarDeleteBtn: Button? = null
+    private var scalarAddBtn: Button?       = null
+    private var scalarCancelEditBtn: Button? = null
+    private var scalarEditBtn: Button?      = null
+    private var scalarDeleteBtn: Button?    = null
+    private var editingScalarEntryId: Int?  = null
+    private val scalarFormHeading = wrappingLabel("New entry").apply { style = "-fx-font-weight: bold;" }
 
     // --- Foreign dividends ---
     private val foreignEntries           = FXCollections.observableArrayList<IncomeDividendForeignEntry>()
@@ -98,8 +107,12 @@ class DividendIncomePane(
     private val foreignFtcrCheck         = CheckBox("Foreign tax credit relief claimed")
     private val foreignTaxableField      = TextField()
     private val foreignDateField         = TextField()
-    private var foreignAddBtn: Button?    = null
-    private var foreignDeleteBtn: Button? = null
+    private var foreignAddBtn: Button?       = null
+    private var foreignCancelEditBtn: Button? = null
+    private var foreignEditBtn: Button?      = null
+    private var foreignDeleteBtn: Button?    = null
+    private var editingForeignEntryId: Int?  = null
+    private val foreignFormHeading = wrappingLabel("New entry").apply { style = "-fx-font-weight: bold;" }
 
     private lateinit var currentTaxYear: String
 
@@ -170,12 +183,29 @@ class DividendIncomePane(
 
     private fun applyLock(isFinalDeclared: Boolean, taxYear: String) {
         val controls: List<Node> = listOfNotNull(
-            ukCategoryPicker, ukAmountField, ukDescField, ukDateField, ukAddBtn, ukDeleteBtn,
-            scalarCategoryPicker, scalarAmountField, scalarRefField, scalarDateField, scalarAddBtn, scalarDeleteBtn,
+            ukCategoryPicker, ukAmountField, ukDescField, ukDateField, ukAddBtn, ukEditBtn, ukDeleteBtn,
+            scalarCategoryPicker, scalarAmountField, scalarRefField, scalarDateField,
+            scalarAddBtn, scalarEditBtn, scalarDeleteBtn,
             foreignCategoryPicker, foreignCountryField, foreignAmountBeforeField, foreignTaxTakenField,
-            foreignSwtField, foreignFtcrCheck, foreignTaxableField, foreignDateField, foreignAddBtn, foreignDeleteBtn,
+            foreignSwtField, foreignFtcrCheck, foreignTaxableField, foreignDateField,
+            foreignAddBtn, foreignEditBtn, foreignDeleteBtn,
         )
         finalDeclarationLock.update(isFinalDeclared, taxYear, *controls.toTypedArray())
+    }
+
+    /**
+     * Whether the tax year selector should be locked because one of the
+     * three sections has an edit in progress. Switching tax year mid-edit
+     * would leave the form showing an entry that no longer belongs to the
+     * year being viewed, so the selector is locked for the whole pane
+     * while any section is being edited, even though the three sections
+     * are otherwise independent.
+     */
+    private fun anyDividendEditInProgress() =
+        editingUkEntryId != null || editingScalarEntryId != null || editingForeignEntryId != null
+
+    private fun refreshTaxYearSelectorEnabled() {
+        taxYearSelector.root.isDisable = anyDividendEditInProgress()
     }
 
     // -------------------------------------------------------------------------
@@ -196,11 +226,19 @@ class DividendIncomePane(
 
         val newAddBtn = Button("Add").apply {
             styleClass.add("primary-action-button")
-            setOnAction { handleUkAdd() }
+            setOnAction { if (editingUkEntryId != null) handleSaveUkEdit() else handleUkAdd() }
         }
         ukAddBtn = newAddBtn
 
-        return entryFormCard("New entry",
+        val newCancelEditBtn = Button("Cancel edit").apply {
+            styleClass.add("secondary-action-button")
+            isVisible = false
+            isManaged = false
+            setOnAction { exitUkEditMode() }
+        }
+        ukCancelEditBtn = newCancelEditBtn
+
+        return entryFormCard(ukFormHeading,
             HBox(10.0).apply {
                 alignment = Pos.CENTER_LEFT
                 children.addAll(
@@ -217,7 +255,8 @@ class DividendIncomePane(
                     infoPopup("A note to help you identify this entry, e.g. 'Lloyds Banking Group Q2 dividend'."),
                     ukDateField,
                     infoPopup("The date the dividend was paid, in format YYYY-MM-DD (e.g. 2025-07-15)."),
-                    newAddBtn
+                    newAddBtn,
+                    newCancelEditBtn,
                 )
             }
         )
@@ -244,9 +283,7 @@ class DividendIncomePane(
         val derivedTaxYear = taxYearForDate(dateText)
         if (derivedTaxYear != currentTaxYear) {
             Dialogs.showError(
-                "The transaction date $dateText falls in tax year $derivedTaxYear, " +
-                        "but you are viewing $currentTaxYear.\n\nSwitch to the $derivedTaxYear view, " +
-                        "or correct the date.",
+                wrongTaxYearMessage(dateText, derivedTaxYear, currentTaxYear),
                 title = "Wrong tax year"
             )
             return
@@ -271,6 +308,106 @@ class DividendIncomePane(
             } catch (e: FinalDeclarationLockedException) {
                 kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
                     Dialogs.showError(e.message ?: "This tax year can no longer be amended.", title = "Tax year locked")
+                    loadAllEntries()
+                }
+            }
+        }
+    }
+
+    // ── UK dividends — Edit ──────────────────────────────────────────────
+
+    private fun handleEditUkSelected(table: TableView<IncomeDividendEntry>) {
+        val selected = table.selectionModel.selectedItem
+        if (selected == null) {
+            Dialogs.showError("Please select an entry to edit.")
+            return
+        }
+        enterUkEditMode(selected)
+    }
+
+    private fun enterUkEditMode(entry: IncomeDividendEntry) {
+        editingUkEntryId = entry.id
+
+        ukCategoryPicker.value = DividendCategory.entries.firstOrNull { it.dbKey == entry.category }
+        ukAmountField.text     = "%.2f".format(entry.amount)
+        ukDescField.text       = entry.description
+        ukDateField.text       = entry.transactionDate
+
+        ukFormHeading.text        = "Edit entry"
+        ukAddBtn?.text            = "Save changes"
+        ukCancelEditBtn?.isVisible = true
+        ukCancelEditBtn?.isManaged = true
+        ukEditBtn?.isDisable      = true
+        ukDeleteBtn?.isDisable    = true
+
+        refreshTaxYearSelectorEnabled()
+    }
+
+    private fun exitUkEditMode() {
+        editingUkEntryId = null
+        ukFormHeading.text        = "New entry"
+        ukAddBtn?.text            = "Add"
+        ukCancelEditBtn?.isVisible = false
+        ukCancelEditBtn?.isManaged = false
+        ukEditBtn?.isDisable      = false
+        ukDeleteBtn?.isDisable    = false
+        clearUkForm()
+        refreshTaxYearSelectorEnabled()
+    }
+
+    private fun handleSaveUkEdit() {
+        val existingId = editingUkEntryId ?: return
+
+        val amountText = ukAmountField.text.trim()
+        val amount     = amountText.toDoubleOrNull()
+        val category   = ukCategoryPicker.value
+        val dateText   = ukDateField.text.trim()
+        val desc       = ukDescField.text.trim()
+        val errors     = mutableListOf<String>()
+
+        if (category == null)            errors += "Please select a dividend type."
+        if (amountText.isBlank())        errors += "Please enter an amount."
+        else if (amount == null)         errors += "Amount must be a number (e.g. 500.00)."
+        else if (amount <= 0)            errors += "Amount must be greater than zero."
+        if (desc.isBlank())              errors += "Please enter a description."
+        if (dateText.isBlank())          errors += "Please enter a transaction date."
+        else if (!isValidDate(dateText)) errors += "Date must be in format YYYY-MM-DD."
+
+        if (errors.isNotEmpty()) { Dialogs.showError(errors.joinToString("\n"), title = "Validation Error"); return }
+
+        val derivedTaxYear = taxYearForDate(dateText)
+        if (derivedTaxYear != currentTaxYear) {
+            Dialogs.showError(
+                wrongTaxYearMessage(dateText, derivedTaxYear, currentTaxYear, editing = true),
+                title = "Wrong tax year"
+            )
+            return
+        }
+
+        scope.launch(Dispatchers.IO) {
+            try {
+                val edited = IncomeDividendRepository.edit(
+                    existingId      = existingId,
+                    userId          = userId,
+                    taxYear         = derivedTaxYear,
+                    category        = category!!.dbKey,
+                    amount          = amount!!,
+                    description     = desc,
+                    transactionDate = dateText,
+                )
+                kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+                    // edit() supersedes the old row and inserts a new one
+                    // with a new id, so replace by index rather than by id.
+                    val idx = ukEntries.indexOfFirst { it.id == existingId }
+                    if (idx >= 0) ukEntries[idx] = edited else ukEntries.add(edited)
+                    refreshUkTotal()
+                    exitUkEditMode()
+                    onStatusChange("UK dividend entry updated ✓")
+                }
+            } catch (e: FinalDeclarationLockedException) {
+                kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+                    Dialogs.showError(e.message ?: "This tax year can no longer be amended.", title = "Tax year locked")
+                    exitUkEditMode()
                     loadAllEntries()
                 }
             }
@@ -308,12 +445,18 @@ class DividendIncomePane(
                 },
             )
         }
+        val newEditBtn = Button("Edit selected").apply {
+            styleClass.add("primary-action-button")
+            setOnAction { handleEditUkSelected(table) }
+        }
+        ukEditBtn = newEditBtn
+
         val newDeleteBtn = Button("Delete selected").apply {
             styleClass.add("primary-action-button")
             setOnAction { deleteUkSelected(table) }
         }
         ukDeleteBtn = newDeleteBtn
-        return entryFormCard("Entries", table, newDeleteBtn)
+        return entryFormCard("Entries", table, HBox(10.0, newEditBtn, newDeleteBtn))
     }
 
     private fun deleteUkSelected(table: TableView<IncomeDividendEntry>) {
@@ -374,11 +517,19 @@ class DividendIncomePane(
 
         val newAddBtn = Button("Add").apply {
             styleClass.add("primary-action-button")
-            setOnAction { handleScalarAdd() }
+            setOnAction { if (editingScalarEntryId != null) handleSaveScalarEdit() else handleScalarAdd() }
         }
         scalarAddBtn = newAddBtn
 
-        return entryFormCard("New entry",
+        val newCancelEditBtn = Button("Cancel edit").apply {
+            styleClass.add("secondary-action-button")
+            isVisible = false
+            isManaged = false
+            setOnAction { exitScalarEditMode() }
+        }
+        scalarCancelEditBtn = newCancelEditBtn
+
+        return entryFormCard(scalarFormHeading,
             HBox(10.0).apply {
                 alignment = Pos.CENTER_LEFT
                 children.addAll(
@@ -405,7 +556,9 @@ class DividendIncomePane(
                     infoPopup("A note to help you identify this entry, e.g. 'Lloyds Banking Group Q2 dividend'."),
                     scalarDateField,
                     infoPopup("The date the dividend was paid, in format YYYY-MM-DD (e.g. 2025-07-15)."),
-                    newAddBtn)
+                    newAddBtn,
+                    newCancelEditBtn,
+                )
             }
         )
     }
@@ -430,9 +583,7 @@ class DividendIncomePane(
         val derivedTaxYear = taxYearForDate(dateText)
         if (derivedTaxYear != currentTaxYear) {
             Dialogs.showError(
-                "The transaction date $dateText falls in tax year $derivedTaxYear, " +
-                        "but you are viewing $currentTaxYear.\n\nSwitch to the $derivedTaxYear view, " +
-                        "or correct the date.",
+                wrongTaxYearMessage(dateText, derivedTaxYear, currentTaxYear),
                 title = "Wrong tax year"
             )
             return
@@ -458,6 +609,104 @@ class DividendIncomePane(
             } catch (e: FinalDeclarationLockedException) {
                 kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
                     Dialogs.showError(e.message ?: "This tax year can no longer be amended.", title = "Tax year locked")
+                    loadAllEntries()
+                }
+            }
+        }
+    }
+
+    // ── UK dividends (special types) — Edit ─────────────────────────────
+
+    private fun handleEditScalarSelected(table: TableView<IncomeDividendEntry>) {
+        val selected = table.selectionModel.selectedItem
+        if (selected == null) {
+            Dialogs.showError("Please select an entry to edit.")
+            return
+        }
+        enterScalarEditMode(selected)
+    }
+
+    private fun enterScalarEditMode(entry: IncomeDividendEntry) {
+        editingScalarEntryId = entry.id
+
+        scalarCategoryPicker.value = DividendScalarCategory.entries.firstOrNull { it.dbKey == entry.category }
+        scalarAmountField.text     = "%.2f".format(entry.amount)
+        scalarRefField.text        = entry.customerReference ?: ""
+        scalarDateField.text       = entry.transactionDate
+
+        scalarFormHeading.text        = "Edit entry"
+        scalarAddBtn?.text            = "Save changes"
+        scalarCancelEditBtn?.isVisible = true
+        scalarCancelEditBtn?.isManaged = true
+        scalarEditBtn?.isDisable      = true
+        scalarDeleteBtn?.isDisable    = true
+
+        refreshTaxYearSelectorEnabled()
+    }
+
+    private fun exitScalarEditMode() {
+        editingScalarEntryId = null
+        scalarFormHeading.text        = "New entry"
+        scalarAddBtn?.text            = "Add"
+        scalarCancelEditBtn?.isVisible = false
+        scalarCancelEditBtn?.isManaged = false
+        scalarEditBtn?.isDisable      = false
+        scalarDeleteBtn?.isDisable    = false
+        clearScalarForm()
+        refreshTaxYearSelectorEnabled()
+    }
+
+    private fun handleSaveScalarEdit() {
+        val existingId = editingScalarEntryId ?: return
+
+        val amountText = scalarAmountField.text.trim()
+        val amount     = amountText.toDoubleOrNull()
+        val category   = scalarCategoryPicker.value
+        val ref        = scalarRefField.text.trim().ifBlank { null }
+        val dateText   = scalarDateField.text.trim()
+        val errors     = mutableListOf<String>()
+
+        if (category == null)            errors += "Please select a type."
+        if (amountText.isBlank())        errors += "Please enter a gross amount."
+        else if (amount == null)         errors += "Gross amount must be a number (e.g. 500.00)."
+        else if (amount <= 0)            errors += "Gross amount must be greater than zero."
+        if (dateText.isBlank())          errors += "Please enter a transaction date."
+        else if (!isValidDate(dateText)) errors += "Date must be in format YYYY-MM-DD."
+
+        if (errors.isNotEmpty()) { Dialogs.showError(errors.joinToString("\n"), title = "Validation Error"); return }
+
+        val derivedTaxYear = taxYearForDate(dateText)
+        if (derivedTaxYear != currentTaxYear) {
+            Dialogs.showError(
+                wrongTaxYearMessage(dateText, derivedTaxYear, currentTaxYear, editing = true),
+                title = "Wrong tax year"
+            )
+            return
+        }
+
+        scope.launch(Dispatchers.IO) {
+            try {
+                val edited = IncomeDividendRepository.edit(
+                    existingId        = existingId,
+                    userId            = userId,
+                    taxYear           = derivedTaxYear,
+                    category          = category!!.dbKey,
+                    amount            = amount!!,
+                    customerReference = ref,
+                    description       = ref ?: "",
+                    transactionDate   = dateText,
+                )
+                kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+                    val idx = scalarEntries.indexOfFirst { it.id == existingId }
+                    if (idx >= 0) scalarEntries[idx] = edited else scalarEntries.add(edited)
+                    refreshScalarTotal()
+                    exitScalarEditMode()
+                    onStatusChange("Dividend entry updated ✓")
+                }
+            } catch (e: FinalDeclarationLockedException) {
+                kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+                    Dialogs.showError(e.message ?: "This tax year can no longer be amended.", title = "Tax year locked")
+                    exitScalarEditMode()
                     loadAllEntries()
                 }
             }
@@ -495,12 +744,18 @@ class DividendIncomePane(
                 },
             )
         }
+        val newEditBtn = Button("Edit selected").apply {
+            styleClass.add("primary-action-button")
+            setOnAction { handleEditScalarSelected(table) }
+        }
+        scalarEditBtn = newEditBtn
+
         val newDeleteBtn = Button("Delete selected").apply {
             styleClass.add("primary-action-button")
             setOnAction { deleteScalarSelected(table) }
         }
         scalarDeleteBtn = newDeleteBtn
-        return entryFormCard("Entries", table, newDeleteBtn)
+        return entryFormCard("Entries", table, HBox(10.0, newEditBtn, newDeleteBtn))
     }
 
     private fun deleteScalarSelected(table: TableView<IncomeDividendEntry>) {
@@ -564,11 +819,19 @@ class DividendIncomePane(
 
         val newAddBtn = Button("Add").apply {
             styleClass.add("primary-action-button")
-            setOnAction { handleForeignAdd() }
+            setOnAction { if (editingForeignEntryId != null) handleSaveForeignEdit() else handleForeignAdd() }
         }
         foreignAddBtn = newAddBtn
 
-        return entryFormCard("New entry",
+        val newCancelEditBtn = Button("Cancel edit").apply {
+            styleClass.add("secondary-action-button")
+            isVisible = false
+            isManaged = false
+            setOnAction { exitForeignEditMode() }
+        }
+        foreignCancelEditBtn = newCancelEditBtn
+
+        return entryFormCard(foreignFormHeading,
             VBox(8.0).apply {
                 children.addAll(
                     HBox(10.0).apply {
@@ -609,6 +872,7 @@ class DividendIncomePane(
                                         "overseas tax already paid — confirm with your tax adviser if unsure."
                             ),
                             newAddBtn,
+                            newCancelEditBtn,
                         )
                     },
                 )
@@ -650,9 +914,7 @@ class DividendIncomePane(
         val derivedTaxYear = taxYearForDate(dateText)
         if (derivedTaxYear != currentTaxYear) {
             Dialogs.showError(
-                "The transaction date $dateText falls in tax year $derivedTaxYear, " +
-                        "but you are viewing $currentTaxYear.\n\nSwitch to the $derivedTaxYear view, " +
-                        "or correct the date.",
+                wrongTaxYearMessage(dateText, derivedTaxYear, currentTaxYear),
                 title = "Wrong tax year"
             )
             return
@@ -681,6 +943,125 @@ class DividendIncomePane(
             } catch (e: FinalDeclarationLockedException) {
                 kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
                     Dialogs.showError(e.message ?: "This tax year can no longer be amended.", title = "Tax year locked")
+                    loadAllEntries()
+                }
+            }
+        }
+    }
+
+    // ── Foreign dividends — Edit ─────────────────────────────────────────
+
+    private fun handleEditForeignSelected(table: TableView<IncomeDividendForeignEntry>) {
+        val selected = table.selectionModel.selectedItem
+        if (selected == null) {
+            Dialogs.showError("Please select an entry to edit.")
+            return
+        }
+        enterForeignEditMode(selected)
+    }
+
+    private fun enterForeignEditMode(entry: IncomeDividendForeignEntry) {
+        editingForeignEntryId = entry.id
+
+        foreignCategoryPicker.value    = DividendForeignCategory.entries.firstOrNull { it.dbKey == entry.category }
+        foreignCountryField.text       = entry.countryCode
+        foreignDateField.text          = entry.transactionDate
+        foreignAmountBeforeField.text  = entry.amountBeforeTax?.let { "%.2f".format(it) } ?: ""
+        foreignTaxTakenField.text      = entry.taxTakenOff?.let { "%.2f".format(it) } ?: ""
+        foreignSwtField.text           = entry.specialWithholdingTax?.let { "%.2f".format(it) } ?: ""
+        foreignTaxableField.text       = "%.2f".format(entry.taxableAmount)
+        foreignFtcrCheck.isSelected    = entry.foreignTaxCreditRelief
+
+        foreignFormHeading.text        = "Edit entry"
+        foreignAddBtn?.text            = "Save changes"
+        foreignCancelEditBtn?.isVisible = true
+        foreignCancelEditBtn?.isManaged = true
+        foreignEditBtn?.isDisable      = true
+        foreignDeleteBtn?.isDisable    = true
+
+        refreshTaxYearSelectorEnabled()
+    }
+
+    private fun exitForeignEditMode() {
+        editingForeignEntryId = null
+        foreignFormHeading.text        = "New entry"
+        foreignAddBtn?.text            = "Add"
+        foreignCancelEditBtn?.isVisible = false
+        foreignCancelEditBtn?.isManaged = false
+        foreignEditBtn?.isDisable      = false
+        foreignDeleteBtn?.isDisable    = false
+        clearForeignForm()
+        refreshTaxYearSelectorEnabled()
+    }
+
+    private fun handleSaveForeignEdit() {
+        val existingId = editingForeignEntryId ?: return
+
+        val category      = foreignCategoryPicker.value
+        val countryRaw    = foreignCountryField.text.trim().uppercase()
+        val dateText      = foreignDateField.text.trim()
+        val amtBeforeText = foreignAmountBeforeField.text.trim()
+        val taxTakenText  = foreignTaxTakenField.text.trim()
+        val swtText       = foreignSwtField.text.trim()
+        val taxableText   = foreignTaxableField.text.trim()
+        val ftcr          = foreignFtcrCheck.isSelected
+
+        val amtBefore = amtBeforeText.toDoubleOrNull()
+        val taxTaken  = taxTakenText.toDoubleOrNull()
+        val swt       = swtText.toDoubleOrNull()
+        val taxable   = taxableText.toDoubleOrNull()
+
+        val errors = mutableListOf<String>()
+        if (category == null)    errors += "Please select a type."
+        if (countryRaw.isBlank()) errors += "Please enter a country code."
+        else if (countryRaw.length != 3 || !countryRaw.all { it.isLetter() })
+            errors += "Country code must be exactly 3 letters (e.g. FRA, DEU, USA)."
+        if (dateText.isBlank())           errors += "Please enter a transaction date."
+        else if (!isValidDate(dateText))  errors += "Date must be in format YYYY-MM-DD."
+        if (amtBeforeText.isNotBlank() && amtBefore == null) errors += "Amount before tax must be a number."
+        if (taxTakenText.isNotBlank()  && taxTaken  == null) errors += "Tax taken off must be a number."
+        if (swtText.isNotBlank()       && swt       == null) errors += "Special withholding tax must be a number."
+        if (taxableText.isBlank())        errors += "Please enter the taxable amount."
+        else if (taxable == null)         errors += "Taxable amount must be a number."
+        else if (taxable <= 0)            errors += "Taxable amount must be greater than zero."
+
+        if (errors.isNotEmpty()) { Dialogs.showError(errors.joinToString("\n"), title = "Validation Error"); return }
+
+        val derivedTaxYear = taxYearForDate(dateText)
+        if (derivedTaxYear != currentTaxYear) {
+            Dialogs.showError(
+                wrongTaxYearMessage(dateText, derivedTaxYear, currentTaxYear, editing = true),
+                title = "Wrong tax year"
+            )
+            return
+        }
+
+        scope.launch(Dispatchers.IO) {
+            try {
+                val edited = IncomeDividendForeignRepository.edit(
+                    existingId             = existingId,
+                    userId                 = userId,
+                    taxYear                = derivedTaxYear,
+                    category               = category!!.dbKey,
+                    countryCode            = countryRaw,
+                    amountBeforeTax        = amtBefore,
+                    taxTakenOff            = taxTaken,
+                    specialWithholdingTax  = swt,
+                    foreignTaxCreditRelief = ftcr,
+                    taxableAmount          = taxable!!,
+                    transactionDate        = dateText,
+                )
+                kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+                    val idx = foreignEntries.indexOfFirst { it.id == existingId }
+                    if (idx >= 0) foreignEntries[idx] = edited else foreignEntries.add(edited)
+                    refreshForeignTotal()
+                    exitForeignEditMode()
+                    onStatusChange("Foreign dividend entry updated ✓")
+                }
+            } catch (e: FinalDeclarationLockedException) {
+                kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+                    Dialogs.showError(e.message ?: "This tax year can no longer be amended.", title = "Tax year locked")
+                    exitForeignEditMode()
                     loadAllEntries()
                 }
             }
@@ -745,12 +1126,18 @@ class DividendIncomePane(
                 },
             )
         }
+        val newEditBtn = Button("Edit selected").apply {
+            styleClass.add("primary-action-button")
+            setOnAction { handleEditForeignSelected(table) }
+        }
+        foreignEditBtn = newEditBtn
+
         val newDeleteBtn = Button("Delete selected").apply {
             styleClass.add("primary-action-button")
             setOnAction { deleteForeignSelected(table) }
         }
         foreignDeleteBtn = newDeleteBtn
-        return entryFormCard("Entries", table, newDeleteBtn)
+        return entryFormCard("Entries", table, HBox(10.0, newEditBtn, newDeleteBtn))
     }
 
     private fun deleteForeignSelected(table: TableView<IncomeDividendForeignEntry>) {
@@ -846,18 +1233,20 @@ class DividendIncomePane(
         )
     }
 
-    private fun entryFormCard(heading: String, vararg content: javafx.scene.Node) =
+    private fun entryFormCard(heading: String, vararg content: javafx.scene.Node): VBox =
+        entryFormCard(wrappingLabel(heading).apply { style = "-fx-font-weight: bold;" }, *content)
+
+    private fun entryFormCard(headingLabel: Label, vararg content: javafx.scene.Node): VBox =
         VBox(8.0).apply {
             padding = Insets(12.0, 16.0, 12.0, 16.0)
             styleClass.add("content-card")
             style   = "-fx-border-radius: 8; -fx-background-radius: 8;"
             children.addAll(
-                wrappingLabel(heading).apply { style = "-fx-font-weight: bold;" },
+                headingLabel,
                 Separator(),
                 *content,
             )
         }
-
 
     private fun isValidDate(text: String) =
         try { LocalDate.parse(text); true } catch (_: DateTimeParseException) { false }

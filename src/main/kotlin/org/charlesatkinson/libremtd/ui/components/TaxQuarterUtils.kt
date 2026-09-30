@@ -50,3 +50,8 @@ fun latestEndedQuarterDate(taxYear: String): String? {
     val today = LocalDate.now()
     return quarters.lastOrNull { LocalDate.parse(it) <= today }
 }
+
+// standardQuarterBounds moved to database.PeriodRepository.kt, alongside
+// standardQuarterFor, so the standard quarter-boundary arithmetic they
+// share lives in one place rather than being duplicated between the
+// database and ui.components packages.

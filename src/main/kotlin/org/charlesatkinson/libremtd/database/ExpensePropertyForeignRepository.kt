@@ -50,7 +50,7 @@ object ExpensePropertyForeignRepository {
         transactionDate: String,
     ): ExpensePropertyForeignEntry {
         return transaction {
-            FinalDeclarationGuard.requireNotFinalDeclaredForPeriod(userId, periodId)
+            FinalDeclarationGuard.requireNotFinalDeclaredForDate(userId, transactionDate)
 
             val now = LocalDateTime.now().toString()
             val id = ExpensePropertyForeignEntries.insert {
@@ -90,7 +90,7 @@ object ExpensePropertyForeignRepository {
         transactionDate: String,
     ): ExpensePropertyForeignEntry {
         return transaction {
-            FinalDeclarationGuard.requireNotFinalDeclaredForPeriod(userId, periodId)
+            FinalDeclarationGuard.requireNotFinalDeclaredForDate(userId, transactionDate)
 
             val now = LocalDateTime.now().toString()
 
@@ -131,9 +131,9 @@ object ExpensePropertyForeignRepository {
                 .where { ExpensePropertyForeignEntries.id eq id }
                 .singleOrNull() ?: return@transaction
 
-            FinalDeclarationGuard.requireNotFinalDeclaredForPeriod(
+            FinalDeclarationGuard.requireNotFinalDeclaredForDate(
                 row[ExpensePropertyForeignEntries.userId],
-                row[ExpensePropertyForeignEntries.periodId],
+                row[ExpensePropertyForeignEntries.transactionDate],
             )
 
             ExpensePropertyForeignEntries.update({ ExpensePropertyForeignEntries.id eq id }) {
@@ -153,6 +153,25 @@ object ExpensePropertyForeignRepository {
                             (ExpensePropertyForeignEntries.transactionDate greaterEq startDate) and
                             (ExpensePropertyForeignEntries.transactionDate lessEq endDate)
                 }
+                .map { row -> row.toExpensePropertyForeignEntry() }
+        }
+    }
+
+    /** Current (non-superseded) entries for one property whose transaction
+     *  date falls within [taxYear], oldest first. Used by the Expenses
+     *  (property, foreign) pane, which shows a whole tax year at a time. */
+    fun currentForPropertyAndYear(propertyId: Int, taxYear: String): List<ExpensePropertyForeignEntry> {
+        val (startDate, endDate) = taxYearDateRange(taxYear)
+        return transaction {
+            ExpensePropertyForeignEntries
+                .selectAll()
+                .where {
+                    (ExpensePropertyForeignEntries.propertyId eq propertyId) and
+                            ExpensePropertyForeignEntries.supersededAt.isNull() and
+                            (ExpensePropertyForeignEntries.transactionDate greaterEq startDate) and
+                            (ExpensePropertyForeignEntries.transactionDate lessEq endDate)
+                }
+                .orderBy(ExpensePropertyForeignEntries.transactionDate)
                 .map { row -> row.toExpensePropertyForeignEntry() }
         }
     }
@@ -194,7 +213,7 @@ object ExpensePropertyForeignRepository {
 
     /**
      * True if this property has ever had an expense entry recorded against
-     * it — including superseded (edited/deleted) ones, since even a
+     * it, including superseded (edited/deleted) ones, since even a
      * corrected entry is evidence the property has real financial history
      * and should not be permanently removed. Used to decide whether
      * PropertyRepository.remove() is safe to offer for a given property.

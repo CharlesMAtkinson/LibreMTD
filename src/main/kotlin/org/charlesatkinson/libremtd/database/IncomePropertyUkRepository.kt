@@ -48,7 +48,7 @@ object IncomePropertyUkRepository {
         transactionDate: String,
     ): IncomePropertyUkEntry {
         return transaction {
-            FinalDeclarationGuard.requireNotFinalDeclaredForPeriod(userId, periodId)
+            FinalDeclarationGuard.requireNotFinalDeclaredForDate(userId, transactionDate)
 
             val now = LocalDateTime.now().toString()
             val id = IncomePropertyUkEntries.insert {
@@ -88,7 +88,7 @@ object IncomePropertyUkRepository {
         transactionDate: String,
     ): IncomePropertyUkEntry {
         return transaction {
-            FinalDeclarationGuard.requireNotFinalDeclaredForPeriod(userId, periodId)
+            FinalDeclarationGuard.requireNotFinalDeclaredForDate(userId, transactionDate)
 
             val now = LocalDateTime.now().toString()
 
@@ -129,9 +129,9 @@ object IncomePropertyUkRepository {
                 .where { IncomePropertyUkEntries.id eq id }
                 .singleOrNull() ?: return@transaction
 
-            FinalDeclarationGuard.requireNotFinalDeclaredForPeriod(
+            FinalDeclarationGuard.requireNotFinalDeclaredForDate(
                 row[IncomePropertyUkEntries.userId],
-                row[IncomePropertyUkEntries.periodId],
+                row[IncomePropertyUkEntries.transactionDate],
             )
 
             IncomePropertyUkEntries.update({ IncomePropertyUkEntries.id eq id }) {
@@ -151,6 +151,25 @@ object IncomePropertyUkRepository {
                             (IncomePropertyUkEntries.transactionDate greaterEq startDate) and
                             (IncomePropertyUkEntries.transactionDate lessEq endDate)
                 }
+                .map { row -> row.toIncomePropertyUkEntry() }
+        }
+    }
+
+    /** Current (non-superseded) entries for one property whose transaction
+     *  date falls within [taxYear], oldest first. Used by the Income
+     *  (property, UK) pane, which shows a whole tax year at a time. */
+    fun currentForPropertyAndYear(propertyId: Int, taxYear: String): List<IncomePropertyUkEntry> {
+        val (startDate, endDate) = taxYearDateRange(taxYear)
+        return transaction {
+            IncomePropertyUkEntries
+                .selectAll()
+                .where {
+                    (IncomePropertyUkEntries.propertyId eq propertyId) and
+                            IncomePropertyUkEntries.supersededAt.isNull() and
+                            (IncomePropertyUkEntries.transactionDate greaterEq startDate) and
+                            (IncomePropertyUkEntries.transactionDate lessEq endDate)
+                }
+                .orderBy(IncomePropertyUkEntries.transactionDate)
                 .map { row -> row.toIncomePropertyUkEntry() }
         }
     }
@@ -192,7 +211,7 @@ object IncomePropertyUkRepository {
 
     /**
      * True if this property has ever had an income entry recorded against
-     * it — including superseded (edited/deleted) ones, since even a
+     * it, including superseded (edited/deleted) ones, since even a
      * corrected entry is evidence of real financial history. Used by
      * PropertiesPane to decide whether PropertyRepository.remove() is safe
      * to offer for a given property.

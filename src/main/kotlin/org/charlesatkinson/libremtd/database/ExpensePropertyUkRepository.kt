@@ -49,7 +49,7 @@ object ExpensePropertyUkRepository {
         transactionDate: String,
     ): ExpensePropertyUkEntry {
         return transaction {
-            FinalDeclarationGuard.requireNotFinalDeclaredForPeriod(userId, periodId)
+            FinalDeclarationGuard.requireNotFinalDeclaredForDate(userId, transactionDate)
 
             val now = LocalDateTime.now().toString()
             val id = ExpensePropertyUkEntries.insert {
@@ -79,7 +79,7 @@ object ExpensePropertyUkRepository {
         transactionDate: String,
     ): ExpensePropertyUkEntry {
         return transaction {
-            FinalDeclarationGuard.requireNotFinalDeclaredForPeriod(userId, periodId)
+            FinalDeclarationGuard.requireNotFinalDeclaredForDate(userId, transactionDate)
 
             val now = LocalDateTime.now().toString()
 
@@ -110,9 +110,9 @@ object ExpensePropertyUkRepository {
                 .where { ExpensePropertyUkEntries.id eq id }
                 .singleOrNull() ?: return@transaction
 
-            FinalDeclarationGuard.requireNotFinalDeclaredForPeriod(
+            FinalDeclarationGuard.requireNotFinalDeclaredForDate(
                 row[ExpensePropertyUkEntries.userId],
-                row[ExpensePropertyUkEntries.periodId],
+                row[ExpensePropertyUkEntries.transactionDate],
             )
 
             ExpensePropertyUkEntries.update({ ExpensePropertyUkEntries.id eq id }) {
@@ -132,6 +132,25 @@ object ExpensePropertyUkRepository {
                             (ExpensePropertyUkEntries.transactionDate greaterEq startDate) and
                             (ExpensePropertyUkEntries.transactionDate lessEq endDate)
                 }
+                .map { row -> row.toExpensePropertyUkEntry() }
+        }
+    }
+
+    /** Current (non-superseded) entries for one property whose transaction
+     *  date falls within [taxYear], oldest first. Used by the Expenses
+     *  (property, UK) pane, which shows a whole tax year at a time. */
+    fun currentForPropertyAndYear(propertyId: Int, taxYear: String): List<ExpensePropertyUkEntry> {
+        val (startDate, endDate) = taxYearDateRange(taxYear)
+        return transaction {
+            ExpensePropertyUkEntries
+                .selectAll()
+                .where {
+                    (ExpensePropertyUkEntries.propertyId eq propertyId) and
+                            ExpensePropertyUkEntries.supersededAt.isNull() and
+                            (ExpensePropertyUkEntries.transactionDate greaterEq startDate) and
+                            (ExpensePropertyUkEntries.transactionDate lessEq endDate)
+                }
+                .orderBy(ExpensePropertyUkEntries.transactionDate)
                 .map { row -> row.toExpensePropertyUkEntry() }
         }
     }

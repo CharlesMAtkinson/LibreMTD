@@ -37,6 +37,7 @@ import org.charlesatkinson.libremtd.ui.components.FinalDeclarationLock
 import org.charlesatkinson.libremtd.ui.components.TaxYearSelector
 import org.charlesatkinson.libremtd.ui.components.hintLabel
 import org.charlesatkinson.libremtd.ui.components.wrappingLabel
+import org.charlesatkinson.libremtd.ui.components.wrongTaxYearMessage
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
 
@@ -67,6 +68,14 @@ class SavingsIncomePane(
     // Final Declaration lock.
     private var loadGeneration = 0
 
+    // Non-null while the form is populated with an existing entry rather
+    // than a blank one — see enterEditMode()/exitEditMode(). Note that a
+    // saved edit produces a NEW row id (edit() supersedes the old row and
+    // inserts a fresh one — see IncomeSavingsRepository.edit), so this is
+    // only ever used to identify which row to supersede, never to look up
+    // the resulting entry afterwards.
+    private var editingEntryId: Int? = null
+
     private val taxYearSelector = TaxYearSelector(userId = userId) { year ->
         currentTaxYear = year
         loadEntries()
@@ -76,9 +85,12 @@ class SavingsIncomePane(
     private val amountField    = TextField()
     private val descField      = TextField()
     private val dateField      = TextField()
-    private var addBtn: Button?    = null
-    private var deleteBtn: Button? = null
+    private var addBtn: Button?       = null
+    private var cancelEditBtn: Button? = null
+    private var editBtn: Button?      = null
+    private var deleteBtn: Button?    = null
 
+    private val entryFormHeading   = wrappingLabel("New entry").apply { style = "-fx-font-weight: bold;" }
     private val entriesHeading     = wrappingLabel("").apply { style = "-fx-font-weight: bold;" }
     private val entriesPlaceholder = wrappingLabel("")
 
@@ -121,7 +133,7 @@ class SavingsIncomePane(
     }
 
     private fun applyLock(isFinalDeclared: Boolean, taxYear: String) {
-        val controls = listOfNotNull(categoryPicker, amountField, descField, dateField, addBtn, deleteBtn)
+        val controls = listOfNotNull(categoryPicker, amountField, descField, dateField, addBtn, editBtn, deleteBtn)
         finalDeclarationLock.update(isFinalDeclared, taxYear, *controls.toTypedArray())
     }
 
@@ -151,20 +163,28 @@ class SavingsIncomePane(
 
         val newAddBtn = Button("Add").apply {
             styleClass.add("primary-action-button")
-            setOnAction { handleAdd() }
+            setOnAction { if (editingEntryId != null) handleSaveEdit() else handleAdd() }
         }
         addBtn = newAddBtn
+
+        val newCancelEditBtn = Button("Cancel edit").apply {
+            styleClass.add("secondary-action-button")
+            isVisible = false
+            isManaged = false
+            setOnAction { exitEditMode() }
+        }
+        cancelEditBtn = newCancelEditBtn
 
         return VBox(8.0).apply {
             padding = Insets(12.0, 16.0, 12.0, 16.0)
             styleClass.add("content-card")
             style   = "-fx-border-radius: 8; -fx-background-radius: 8;"
             children.addAll(
-                wrappingLabel("New entry").apply { style = "-fx-font-weight: bold;" },
+                entryFormHeading,
                 Separator(),
                 HBox(10.0).apply {
                     alignment = Pos.CENTER_LEFT
-                    children.addAll(categoryPicker, amountField, descField, dateField, newAddBtn)
+                    children.addAll(categoryPicker, amountField, descField, dateField, newAddBtn, newCancelEditBtn)
                 },
             )
         }
@@ -195,10 +215,7 @@ class SavingsIncomePane(
 
         if (derivedTaxYear != currentTaxYear) {
             Dialogs.showError(
-                "The transaction date $dateText falls in tax year $derivedTaxYear, " +
-                        "but you are viewing $currentTaxYear.\n\n" +
-                        "Please switch to the $derivedTaxYear view and add the entry there, " +
-                        "or correct the transaction date.",
+                wrongTaxYearMessage(dateText, derivedTaxYear, currentTaxYear),
                 title = "Wrong tax year"
             )
             return
@@ -223,6 +240,121 @@ class SavingsIncomePane(
             } catch (e: FinalDeclarationLockedException) {
                 kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
                     Dialogs.showError(e.message ?: "This tax year can no longer be amended.", title = "Tax year locked")
+                    loadEntries()
+                }
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Edit — reuses the New Entry form. Selecting a row and clicking
+    // "Edit selected" populates the form and turns the Add button into
+    // "Save changes"; Cancel edit returns to add mode without saving.
+    // -------------------------------------------------------------------------
+
+    private fun handleEditSelected(table: TableView<IncomeSavingsEntry>) {
+        val selected = table.selectionModel.selectedItem
+        if (selected == null) {
+            Dialogs.showError("Please select an entry to edit.")
+            return
+        }
+        enterEditMode(selected)
+    }
+
+    private fun enterEditMode(entry: IncomeSavingsEntry) {
+        editingEntryId = entry.id
+
+        categoryPicker.value = SavingsCategory.entries.firstOrNull { it.dbKey == entry.category }
+        amountField.text     = "%.2f".format(entry.amount)
+        descField.text        = entry.description
+        dateField.text        = entry.transactionDate
+
+        entryFormHeading.text = "Edit entry"
+        addBtn?.text          = "Save changes"
+        cancelEditBtn?.isVisible = true
+        cancelEditBtn?.isManaged = true
+
+        // Switching tax year mid-edit would leave the form showing an
+        // entry that no longer belongs to the year being viewed — simplest
+        // to just disable the selector until the edit is saved or cancelled.
+        taxYearSelector.root.isDisable = true
+
+        // Prevent starting a second edit, or deleting the row currently
+        // being edited, while the form is mid-edit.
+        editBtn?.isDisable   = true
+        deleteBtn?.isDisable = true
+    }
+
+    private fun exitEditMode() {
+        editingEntryId = null
+        entryFormHeading.text = "New entry"
+        addBtn?.text          = "Add"
+        cancelEditBtn?.isVisible = false
+        cancelEditBtn?.isManaged = false
+        taxYearSelector.root.isDisable = false
+        editBtn?.isDisable   = false
+        deleteBtn?.isDisable = false
+        clearForm()
+    }
+
+    private fun handleSaveEdit() {
+        val existingId = editingEntryId ?: return
+
+        val errors     = mutableListOf<String>()
+        val category   = categoryPicker.value
+        val amountText = amountField.text.trim()
+        val amount     = amountText.toDoubleOrNull()
+        val desc       = descField.text.trim()
+        val dateText   = dateField.text.trim()
+
+        if (category == null)            errors += "Please select a category."
+        if (amountText.isBlank())        errors += "Please enter an amount."
+        else if (amount == null)         errors += "Amount must be a number (e.g. 125.50)."
+        else if (amount <= 0)            errors += "Amount must be greater than zero."
+        if (desc.isBlank())              errors += "Please enter a description."
+        if (dateText.isBlank())          errors += "Please enter a transaction date."
+        else if (!isValidDate(dateText)) errors += "Date must be in format YYYY-MM-DD (e.g. 2025-07-15)."
+
+        if (errors.isNotEmpty()) {
+            Dialogs.showError(errors.joinToString("\n"), title = "Validation Error")
+            return
+        }
+
+        val derivedTaxYear = taxYearForDate(dateText)
+
+        if (derivedTaxYear != currentTaxYear) {
+            Dialogs.showError(
+                wrongTaxYearMessage(dateText, derivedTaxYear, currentTaxYear, editing = true),
+                title = "Wrong tax year"
+            )
+            return
+        }
+
+        scope.launch(Dispatchers.IO) {
+            try {
+                val edited = IncomeSavingsRepository.edit(
+                    existingId      = existingId,
+                    userId          = userId,
+                    taxYear         = derivedTaxYear,
+                    category        = category!!.dbKey,
+                    amount          = amount!!,
+                    description     = desc,
+                    transactionDate = dateText,
+                )
+                kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+                    // edit() supersedes the old row and inserts a new one
+                    // with a new id, so the old row is replaced by index
+                    // rather than updated by matching id.
+                    val idx = entries.indexOfFirst { it.id == existingId }
+                    if (idx >= 0) entries[idx] = edited else entries.add(edited)
+                    refreshTotal()
+                    exitEditMode()
+                    onStatusChange("Savings entry updated ✓")
+                }
+            } catch (e: FinalDeclarationLockedException) {
+                kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+                    Dialogs.showError(e.message ?: "This tax year can no longer be amended.", title = "Tax year locked")
+                    exitEditMode()
                     loadEntries()
                 }
             }
@@ -259,6 +391,12 @@ class SavingsIncomePane(
                 },
             )
         }
+
+        val newEditBtn = Button("Edit selected").apply {
+            styleClass.add("primary-action-button")
+            setOnAction { handleEditSelected(table) }
+        }
+        editBtn = newEditBtn
 
         val newDeleteBtn = Button("Delete selected").apply {
             styleClass.add("primary-action-button")
@@ -301,7 +439,7 @@ class SavingsIncomePane(
                 entriesHeading,
                 Separator(),
                 table,
-                newDeleteBtn,
+                HBox(10.0, newEditBtn, newDeleteBtn),
             )
         }
     }

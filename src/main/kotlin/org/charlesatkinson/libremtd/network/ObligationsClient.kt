@@ -64,8 +64,10 @@ private val shortDateFmt = DateTimeFormatter.ofPattern("d MMM")
  *   #002  6 Jul – 5 Oct
  *   #003  6 Oct – 5 Jan
  *   #004  6 Jan – 5 Apr
+ *
+ * internal (not private) so ObligationsClientTest can exercise it directly.
  */
-private fun derivePeriodKey(startDate: LocalDate): String {
+internal fun derivePeriodKey(startDate: LocalDate): String {
     val m = startDate.monthValue
     val d = startDate.dayOfMonth
     return when {
@@ -79,8 +81,10 @@ private fun derivePeriodKey(startDate: LocalDate): String {
 /**
  * Derives the tax year string ("2025-26") that a period start date belongs to.
  * The tax year starts on 6 April.
+ *
+ * internal (not private) so ObligationsClientTest can exercise it directly.
  */
-private fun deriveTaxYear(startDate: LocalDate): String {
+internal fun deriveTaxYear(startDate: LocalDate): String {
     val m = startDate.monthValue
     val d = startDate.dayOfMonth
     val y = startDate.year
@@ -89,25 +93,65 @@ private fun deriveTaxYear(startDate: LocalDate): String {
 }
 
 /**
- * Produces a period label in the same format used by PeriodSelector.formatPeriod:
- *   "2025-26  #001  6 Apr to 5 Jul"
+ * Builds an [Obligation] from one HMRC [ObligationDetail].
  *
- * Uses [periodKey] from the API when present, otherwise derives it from
- * [periodStartDate].  Falls back to the raw start-date string on parse failure.
+ * The tax year and period key are both derived from the obligation's OWN
+ * dates, never assumed from the tax year the caller happened to request
+ * obligations for. This matters because HMRC's sandbox test data does not
+ * necessarily respect the fromDate/toDate query parameters — it can return
+ * obligations dated in a completely different tax year to the one
+ * requested — and previously LibreMTD stored whatever tax year the pane
+ * was currently showing alongside those dates regardless, producing a
+ * Period row whose taxYear and startDate/endDate disagreed with each
+ * other.
+ *
+ * [Obligation.periodKey] holds the short HMRC code (e.g. "#001"), suitable
+ * for storing in the database. [Obligation.displayLabel] holds the
+ * human-readable summary shown in the Obligations table
+ * ("2026-27  #001  6 Apr to 5 Jul"). These were previously conflated into
+ * a single field, which is what caused the full display text to be
+ * written into the database's periodKey column.
+ *
+ * internal (not private) so ObligationsClientTest can exercise it directly,
+ * without needing to mock an HTTP response.
  */
-private fun formatObligationPeriod(
-    periodStartDate: String,
-    periodEndDate:   String,
-    periodKey:       String?,
-): String {
+internal fun buildObligation(detail: ObligationDetail): Obligation {
+    val status = when (detail.status.lowercase()) {
+        "fulfilled" -> ObligationStatus.Fulfilled
+        "open"      -> ObligationStatus.Open
+        else        -> ObligationStatus.Open
+    }
+
     return try {
-        val start   = LocalDate.parse(periodStartDate)
-        val end     = LocalDate.parse(periodEndDate)
+        val start   = LocalDate.parse(detail.periodStartDate)
+        val end     = LocalDate.parse(detail.periodEndDate)
         val taxYear = deriveTaxYear(start)
-        val key     = periodKey ?: derivePeriodKey(start)
-        "$taxYear  $key  ${start.format(shortDateFmt)} to ${end.format(shortDateFmt)}"
+        val key     = detail.periodKey ?: derivePeriodKey(start)
+
+        Obligation(
+            periodKey    = key,
+            displayLabel = "$taxYear  $key  ${start.format(shortDateFmt)} to ${end.format(shortDateFmt)}",
+            taxYear      = taxYear,
+            start        = detail.periodStartDate,
+            end          = detail.periodEndDate,
+            due          = detail.dueDate,
+            status       = status,
+        )
     } catch (_: DateTimeParseException) {
-        periodKey ?: periodStartDate
+        // Dates didn't parse — fall back to something that displays without
+        // crashing. taxYear is deliberately left blank so a caller that
+        // persists obligations to the Periods table knows to skip this one
+        // rather than write a row with an unknown tax year.
+        val fallbackKey = detail.periodKey ?: detail.periodStartDate
+        Obligation(
+            periodKey    = fallbackKey,
+            displayLabel = fallbackKey,
+            taxYear      = "",
+            start        = detail.periodStartDate,
+            end          = detail.periodEndDate,
+            due          = detail.dueDate,
+            status       = status,
+        )
     }
 }
 
@@ -179,23 +223,7 @@ class ObligationsClient(private val apiClient: HmrcApiClient) {
             val parsed = json.decodeFromString<ObligationsResponse>(response.body())
             val obligations = parsed.obligations
                 .flatMap { it.obligationDetails }
-                .map { detail ->
-                    Obligation(
-                        periodKey = formatObligationPeriod(
-                            periodStartDate = detail.periodStartDate,
-                            periodEndDate   = detail.periodEndDate,
-                            periodKey       = detail.periodKey,
-                        ),
-                        start  = detail.periodStartDate,
-                        end    = detail.periodEndDate,
-                        due    = detail.dueDate,
-                        status = when (detail.status.lowercase()) {
-                            "fulfilled" -> ObligationStatus.Fulfilled
-                            "open"      -> ObligationStatus.Open
-                            else        -> ObligationStatus.Open
-                        },
-                    )
-                }
+                .map { detail -> buildObligation(detail) }
             ApiResult.Success(obligations)
         } catch (e: Exception) {
             val msg = "Failed to parse obligations response: ${e.message}"

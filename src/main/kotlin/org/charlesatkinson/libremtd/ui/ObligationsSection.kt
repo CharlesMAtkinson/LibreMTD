@@ -71,7 +71,7 @@ class ObligationsSection(
             columns.addAll(
                 TableColumn<Obligation, String>("Period").apply {
                     prefWidth = 240.0
-                    setCellValueFactory { it.value.periodKey.toObservable() }
+                    setCellValueFactory { it.value.displayLabel.toObservable() }
                 },
                 TableColumn<Obligation, String>("Start").apply {
                     prefWidth = 100.0
@@ -103,7 +103,8 @@ class ObligationsSection(
             title    = "Quarterly Obligations — $taxYear",
             infoText = "HMRC's record of which quarterly submissions it has received for this tax year. " +
                     "All four quarters must show Fulfilled before you can make a final declaration. " +
-                    "This table refreshes automatically when you change tax year or submit.",
+                    "This table refreshes automatically when you change tax year, submit, or revisit " +
+                    "this pane, as well as when you click Refresh.",
             rows = listOf(
                 HBox(8.0).apply {
                     alignment = Pos.CENTER_LEFT
@@ -186,29 +187,57 @@ class ObligationsSection(
                     // finishes elapsing.
                     Platform.runLater { table.items.setAll(obligations) }
 
+                    // Awaited (not fire-and-forget as this previously was)
+                    // so that by the time this refresh() call completes,
+                    // the database is guaranteed to reflect what was just
+                    // fetched — removing a latent race where a pane
+                    // revisited moments after a refresh could still see
+                    // stale (or absent) period data.
+                    persistPeriods(userId, obligations)
+
                     val fulfilled = obligations.count { it.status == ObligationStatus.Fulfilled }
                     showStatusAfterMinDisplay(
                         "$fulfilled of ${obligations.size} quarters fulfilled",
                         if (fulfilled == obligations.size) "status-success" else "hint-label",
                     )
-
-                    scope.launch(Dispatchers.IO) {
-                        val properties = PropertyRepository.findByUser(userId)
-                        if (properties.isNotEmpty()) {
-                            obligations.forEach { obligation ->
-                                PeriodRepository.upsert(
-                                    taxYear   = taxYear,
-                                    periodKey = obligation.periodKey,
-                                    startDate = obligation.start,
-                                    endDate   = obligation.end,
-                                    dueDate   = obligation.due,
-                                )
-                            }
-                            logger.info { "Persisted ${obligations.size} periods for $taxYear" }
-                        }
-                    }
                 }
             }
+        }
+    }
+
+    /**
+     * Persists each obligation as a Period row, keyed by the obligation's
+     * OWN tax year — never the tax year this refresh() call was made
+     * for — since HMRC's sandbox test data does not necessarily respect
+     * the requested date range (see network.buildObligation's doc comment).
+     * Does nothing if the user has no properties yet, matching the
+     * previous behaviour, since periods are only useful once there is
+     * something to record against them.
+     */
+    private suspend fun persistPeriods(userId: Int, obligations: List<Obligation>) {
+        withContext(Dispatchers.IO) {
+            val properties = PropertyRepository.findByUser(userId)
+            if (properties.isEmpty()) return@withContext
+
+            var persisted = 0
+            obligations.forEach { obligation ->
+                // taxYear is blank only when HMRC returned a date LibreMTD
+                // could not parse — see buildObligation's doc comment. Skip
+                // rather than write a Period row with an unknown tax year.
+                if (obligation.taxYear.isBlank()) {
+                    logger.warn { "Skipping obligation with unparseable dates: $obligation" }
+                    return@forEach
+                }
+                PeriodRepository.upsert(
+                    taxYear   = obligation.taxYear,
+                    periodKey = obligation.periodKey,
+                    startDate = obligation.start,
+                    endDate   = obligation.end,
+                    dueDate   = obligation.due,
+                )
+                persisted++
+            }
+            logger.info { "Persisted $persisted period(s) from this response" }
         }
     }
 }

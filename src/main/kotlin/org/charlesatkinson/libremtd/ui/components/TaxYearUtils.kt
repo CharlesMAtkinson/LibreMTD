@@ -37,6 +37,58 @@ fun previousCompletedTaxYear(): String {
     return if (years.size >= 2) years[years.size - 2] else years.last()
 }
 
+/**
+ * Builds the error message shown when a transaction date falls in a tax
+ * year other than the one currently being viewed (or, with [editing] set,
+ * the one an in-progress edit belongs to).
+ *
+ * Distinguishes three cases:
+ *
+ * - [derivedTaxYear] is a year LibreMTD supports: invites the user to
+ *   switch views or correct the date, as before.
+ * - [derivedTaxYear] is earlier than the earliest supported year (e.g.
+ *   2025-26 or earlier — see database.availableTaxYears' doc comment):
+ *   says so plainly and does not suggest switching to it, since there is
+ *   nowhere to switch to.
+ * - [derivedTaxYear] is later than the latest currently-offered year: this
+ *   is a genuinely different situation from "too early" — the tax year
+ *   simply has not started yet, going by today's date — so it gets its
+ *   own wording rather than reusing "supported tax years start from …",
+ *   which would be true but misleading here.
+ */
+fun wrongTaxYearMessage(
+    dateText: String,
+    derivedTaxYear: String,
+    currentTaxYear: String,
+    editing: Boolean = false,
+): String {
+    val years = availableTaxYears()
+
+    if (derivedTaxYear in years) {
+        val viewingClause = if (editing)
+            "editing an entry in $currentTaxYear"
+        else
+            "viewing $currentTaxYear"
+        val actionClause = if (editing)
+            "Correct the transaction date, or cancel the edit and switch to the $derivedTaxYear view instead."
+        else
+            "Switch to the $derivedTaxYear view, or correct the date."
+
+        return "The transaction date $dateText falls in tax year $derivedTaxYear, but you are " +
+                "$viewingClause.\n\n$actionClause"
+    }
+
+    return if (derivedTaxYear < years.first()) {
+        "The transaction date $dateText falls in tax year $derivedTaxYear, which LibreMTD does not " +
+                "support (supported tax years start from ${years.first()}).\n\n" +
+                "Please correct the date."
+    } else {
+        "The transaction date $dateText falls in tax year $derivedTaxYear, which has not started yet " +
+                "(the most recent tax year LibreMTD currently offers is ${years.last()}).\n\n" +
+                "Please correct the date, or check the system date if this was unintended."
+    }
+}
+
 // ── Shared component ──────────────────────────────────────────────────────────
 
 /**

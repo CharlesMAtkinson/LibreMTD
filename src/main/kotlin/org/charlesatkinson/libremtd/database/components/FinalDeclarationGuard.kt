@@ -19,8 +19,8 @@
 
 package org.charlesatkinson.libremtd.database.components
 
-import org.charlesatkinson.libremtd.database.PeriodRepository
 import org.charlesatkinson.libremtd.database.SubmissionRepository
+import org.charlesatkinson.libremtd.database.taxYearForDate
 
 /**
  * Central enforcement point for the rule that no income, expense, allowance
@@ -29,7 +29,7 @@ import org.charlesatkinson.libremtd.database.SubmissionRepository
  * SubmissionRepository.isFinalDeclared).
  *
  * Called from the entry repositories themselves, at the start of their
- * transaction blocks — not only from the UI — so that no save path,
+ * transaction blocks, not only from the UI, so that no save path,
  * present or future, can bypass it. UI code should also check ahead of
  * time (e.g. to disable controls) but must not rely on that check alone.
  */
@@ -43,13 +43,11 @@ object FinalDeclarationGuard {
         }
     }
 
-    /** As [requireNotFinalDeclared], but resolves the tax year from
-     *  [periodId] first, for repositories keyed on period rather than tax
-     *  year directly (the property income/expense repositories). Does
-     *  nothing if [periodId] does not correspond to a known period, since
-     *  in that case there is nothing to guard against. */
-    fun requireNotFinalDeclaredForPeriod(userId: Int, periodId: Int) {
-        val taxYear = PeriodRepository.findById(periodId)?.taxYear ?: return
-        requireNotFinalDeclared(userId, taxYear)
+    /** As [requireNotFinalDeclared], but derives the tax year from
+     *  [transactionDate] (format YYYY-MM-DD), for the property
+     *  income/expense repositories. The date alone determines the tax
+     *  year, so no period lookup is needed. */
+    fun requireNotFinalDeclaredForDate(userId: Int, transactionDate: String) {
+        requireNotFinalDeclared(userId, taxYearForDate(transactionDate))
     }
 }

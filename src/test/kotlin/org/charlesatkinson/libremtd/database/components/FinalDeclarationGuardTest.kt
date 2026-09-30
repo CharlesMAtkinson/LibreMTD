@@ -19,7 +19,6 @@
 
 package org.charlesatkinson.libremtd.database.components
 
-import org.charlesatkinson.libremtd.database.PeriodRepository
 import org.charlesatkinson.libremtd.database.SubmissionRepository
 import org.charlesatkinson.libremtd.database.tables.Periods
 import org.charlesatkinson.libremtd.database.tables.Submissions
@@ -46,11 +45,10 @@ class FinalDeclarationGuardTest {
 
     @BeforeEach
     fun setUp() {
-        // Real temp-file SQLite, not in-memory — see SettingsRepositoryTest
+        // Real temp-file SQLite, not in-memory. See SettingsRepositoryTest
         // for why: Exposed opens a fresh JDBC connection per transaction{}
         // block, and an in-memory SQLite database is wiped as soon as its
-        // one open connection closes, so schema created in one transaction
-        // would vanish before the next.
+        // one open connection closes.
         dbFile = Files.createTempFile("libremtd-test-", ".sqlite")
         db = Database.connect("jdbc:sqlite:${dbFile}", driver = "org.sqlite.JDBC")
         transaction(db) {
@@ -77,6 +75,13 @@ class FinalDeclarationGuardTest {
         }
     }
 
+    private fun declare(userId: Int, taxYear: String) {
+        SubmissionRepository.record(
+            userId = userId, periodId = null, taxYear = taxYear,
+            submissionType = "final_declaration", hmrcResponse = "204",
+        )
+    }
+
     @Test
     fun `requireNotFinalDeclared does not throw for an open tax year`() {
         insertUser(1)
@@ -88,10 +93,7 @@ class FinalDeclarationGuardTest {
     @Test
     fun `requireNotFinalDeclared throws for a finally declared tax year`() {
         insertUser(1)
-        SubmissionRepository.record(
-            userId = 1, periodId = null, taxYear = "2026-27",
-            submissionType = "final_declaration", hmrcResponse = "204",
-        )
+        declare(1, "2026-27")
         val ex = assertThrows(FinalDeclarationLockedException::class.java) {
             FinalDeclarationGuard.requireNotFinalDeclared(userId = 1, taxYear = "2026-27")
         }
@@ -99,42 +101,30 @@ class FinalDeclarationGuardTest {
     }
 
     @Test
-    fun `requireNotFinalDeclaredForPeriod resolves the tax year and throws when locked`() {
+    fun `requireNotFinalDeclaredForDate throws when the date's tax year is finally declared`() {
         insertUser(1)
-        val period = PeriodRepository.upsert(
-            taxYear = "2026-27", periodKey = "#001",
-            startDate = "2026-04-06", endDate = "2026-07-05", dueDate = "2026-08-05",
-        )
-        SubmissionRepository.record(
-            userId = 1, periodId = null, taxYear = "2026-27",
-            submissionType = "final_declaration", hmrcResponse = "204",
-        )
+        declare(1, "2026-27")
+        val ex = assertThrows(FinalDeclarationLockedException::class.java) {
+            FinalDeclarationGuard.requireNotFinalDeclaredForDate(userId = 1, transactionDate = "2026-05-01")
+        }
+        assertEquals("2026-27", ex.taxYear)
+    }
+
+    @Test
+    fun `requireNotFinalDeclaredForDate does not throw when only a different tax year is declared`() {
+        insertUser(1)
+        declare(1, "2026-27")
+        assertDoesNotThrow {
+            FinalDeclarationGuard.requireNotFinalDeclaredForDate(userId = 1, transactionDate = "2027-04-06")
+        }
+    }
+
+    @Test
+    fun `requireNotFinalDeclaredForDate treats 5 April as the last day of the earlier tax year`() {
+        insertUser(1)
+        declare(1, "2026-27")
         assertThrows(FinalDeclarationLockedException::class.java) {
-            FinalDeclarationGuard.requireNotFinalDeclaredForPeriod(userId = 1, periodId = period.id)
-        }
-    }
-
-    @Test
-    fun `requireNotFinalDeclaredForPeriod does not throw when the period's tax year is open`() {
-        insertUser(1)
-        val period = PeriodRepository.upsert(
-            taxYear = "2025-26", periodKey = "#001",
-            startDate = "2025-04-06", endDate = "2025-07-05", dueDate = "2025-08-05",
-        )
-        SubmissionRepository.record(
-            userId = 1, periodId = null, taxYear = "2026-27",
-            submissionType = "final_declaration", hmrcResponse = "204",
-        )
-        assertDoesNotThrow {
-            FinalDeclarationGuard.requireNotFinalDeclaredForPeriod(userId = 1, periodId = period.id)
-        }
-    }
-
-    @Test
-    fun `requireNotFinalDeclaredForPeriod does nothing for an unknown period id`() {
-        insertUser(1)
-        assertDoesNotThrow {
-            FinalDeclarationGuard.requireNotFinalDeclaredForPeriod(userId = 1, periodId = 999)
+            FinalDeclarationGuard.requireNotFinalDeclaredForDate(userId = 1, transactionDate = "2027-04-05")
         }
     }
 }

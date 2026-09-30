@@ -50,7 +50,7 @@ object IncomePropertyForeignRepository {
         transactionDate: String,
     ): IncomePropertyForeignEntry {
         return transaction {
-            FinalDeclarationGuard.requireNotFinalDeclaredForPeriod(userId, periodId)
+            FinalDeclarationGuard.requireNotFinalDeclaredForDate(userId, transactionDate)
 
             val now = LocalDateTime.now().toString()
             val id = IncomePropertyForeignEntries.insert {
@@ -90,7 +90,7 @@ object IncomePropertyForeignRepository {
         transactionDate: String,
     ): IncomePropertyForeignEntry {
         return transaction {
-            FinalDeclarationGuard.requireNotFinalDeclaredForPeriod(userId, periodId)
+            FinalDeclarationGuard.requireNotFinalDeclaredForDate(userId, transactionDate)
 
             val now = LocalDateTime.now().toString()
 
@@ -131,9 +131,9 @@ object IncomePropertyForeignRepository {
                 .where { IncomePropertyForeignEntries.id eq id }
                 .singleOrNull() ?: return@transaction
 
-            FinalDeclarationGuard.requireNotFinalDeclaredForPeriod(
+            FinalDeclarationGuard.requireNotFinalDeclaredForDate(
                 row[IncomePropertyForeignEntries.userId],
-                row[IncomePropertyForeignEntries.periodId],
+                row[IncomePropertyForeignEntries.transactionDate],
             )
 
             IncomePropertyForeignEntries.update({ IncomePropertyForeignEntries.id eq id }) {
@@ -153,6 +153,25 @@ object IncomePropertyForeignRepository {
                             (IncomePropertyForeignEntries.transactionDate greaterEq startDate) and
                             (IncomePropertyForeignEntries.transactionDate lessEq endDate)
                 }
+                .map { row -> row.toIncomePropertyForeignEntry() }
+        }
+    }
+
+    /** Current (non-superseded) entries for one property whose transaction
+     *  date falls within [taxYear], oldest first. Used by the Income
+     *  (property, foreign) pane, which shows a whole tax year at a time. */
+    fun currentForPropertyAndYear(propertyId: Int, taxYear: String): List<IncomePropertyForeignEntry> {
+        val (startDate, endDate) = taxYearDateRange(taxYear)
+        return transaction {
+            IncomePropertyForeignEntries
+                .selectAll()
+                .where {
+                    (IncomePropertyForeignEntries.propertyId eq propertyId) and
+                            IncomePropertyForeignEntries.supersededAt.isNull() and
+                            (IncomePropertyForeignEntries.transactionDate greaterEq startDate) and
+                            (IncomePropertyForeignEntries.transactionDate lessEq endDate)
+                }
+                .orderBy(IncomePropertyForeignEntries.transactionDate)
                 .map { row -> row.toIncomePropertyForeignEntry() }
         }
     }

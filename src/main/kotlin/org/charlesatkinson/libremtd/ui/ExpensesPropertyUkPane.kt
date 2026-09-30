@@ -17,30 +17,32 @@
 
 package org.charlesatkinson.libremtd.ui
 
+import javafx.beans.property.SimpleStringProperty
+import javafx.collections.FXCollections
 import javafx.geometry.Insets
 import javafx.geometry.Pos
 import javafx.scene.control.*
 import javafx.scene.layout.*
-import javafx.collections.FXCollections
-import javafx.beans.property.SimpleStringProperty
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.javafx.JavaFx
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.charlesatkinson.libremtd.database.ExpensePropertyUkEntry
 import org.charlesatkinson.libremtd.database.ExpensePropertyUkRepository
 import org.charlesatkinson.libremtd.database.PeriodRepository
 import org.charlesatkinson.libremtd.database.Property
 import org.charlesatkinson.libremtd.database.PropertyType
-import org.charlesatkinson.libremtd.database.ExpensePropertyUkEntry
 import org.charlesatkinson.libremtd.database.SubmissionRepository
 import org.charlesatkinson.libremtd.database.components.FinalDeclarationLockedException
+import org.charlesatkinson.libremtd.database.taxYearForDate
 import org.charlesatkinson.libremtd.ui.components.Dialogs
 import org.charlesatkinson.libremtd.ui.components.FinalDeclarationLock
-import org.charlesatkinson.libremtd.ui.components.PeriodSelector
 import org.charlesatkinson.libremtd.ui.components.PropertySelector
-import org.charlesatkinson.libremtd.ui.components.RefreshableRoot
+import org.charlesatkinson.libremtd.ui.components.TaxYearSelector
 import org.charlesatkinson.libremtd.ui.components.hintLabel
 import org.charlesatkinson.libremtd.ui.components.wrappingLabel
+import org.charlesatkinson.libremtd.ui.components.wrongTaxYearMessage
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
 
@@ -50,62 +52,54 @@ class ExpensesPropertyUkPane(
     private val onStatusChange: (String) -> Unit,
 ) {
 
-    val root: RefreshableRoot
+    val root: VBox
 
     private val entries    = FXCollections.observableArrayList<ExpensePropertyUkEntry>()
     private val totalLabel = wrappingLabel("£0.00").apply {
         styleClass.add("expense-total-value-label")
     }
 
-    private var currentPeriodId: Int?      = null
     private var currentProperty: Property? = null
+    private var currentTaxYear: String?    = null
 
-    // Declared before any selector below: PropertySelector/PeriodSelector
-    // may invoke their callback synchronously during construction, and
-    // that callback (via reloadIfReady -> applyLock) uses this field.
+    // Everything the selectors' callbacks can touch is declared BEFORE the
+    // selectors: they may call back during their own construction.
     private val finalDeclarationLock = FinalDeclarationLock()
 
     // Bumped on every reload request; a coroutine only applies its result
-    // if this hasn't moved on since it captured its own value. Guards
-    // against two overlapping loadEntries() calls (e.g. from switching
-    // Property and Period in quick succession) resolving out of order and
-    // the stale one overwriting the current pane state, including the
-    // Final Declaration lock.
+    // if this has not moved on since it captured its own value.
     private var loadGeneration = 0
+
+    // Non-null while the form is populated with an existing entry. A saved
+    // edit produces a NEW row id (edit() supersedes the old row and
+    // inserts a fresh one), so this only identifies which row to supersede.
+    private var editingEntryId: Int? = null
+
+    private val categoryPicker = ComboBox<ExpenseCategory>()
+    private val amountField    = TextField()
+    private val descField      = TextField()
+    private val dateField      = TextField()
+    private var addBtn: Button?        = null
+    private var cancelEditBtn: Button? = null
+    private var editBtn: Button?       = null
+    private var deleteBtn: Button?     = null
+
+    private val entryFormHeading   = wrappingLabel("New entry").apply { style = "-fx-font-weight: bold;" }
+    private val entriesHeading     = wrappingLabel("").apply { style = "-fx-font-weight: bold;" }
+    private val entriesPlaceholder = wrappingLabel("")
 
     private val propertySelector = PropertySelector(userId, PropertyType.UK) { property ->
         currentProperty = property
         reloadIfReady()
     }
 
-    private val periodSelector = PeriodSelector(userId = userId) { period ->
-        currentPeriodId = period?.id
+    private val taxYearSelector = TaxYearSelector(userId = userId) { year ->
+        currentTaxYear = year
         reloadIfReady()
     }
 
-    private val categoryPicker = ComboBox<ExpenseCategory>()
-    private val amountField    = TextField()
-    private val descField      = TextField()
-    private val dateField      = TextField()
-    private var addBtn: Button?    = null
-    private var deleteBtn: Button? = null
-
     init {
-        val innerVBox = buildUI()
-        root = RefreshableRoot(innerVBox) { refresh() }
-    }
-
-    /**
-     * Called by MainWindow after a successful HMRC connection, so this
-     * pane's PeriodSelector — built before any obligations had ever been
-     * fetched, and so possibly with nothing to offer — picks up periods
-     * that now exist. PeriodSelector.reload() re-applies the current
-     * selection itself, which re-triggers reloadIfReady() via the
-     * onSelectionChanged callback above, so nothing further is needed here.
-     * Must be called on the JavaFX application thread.
-     */
-    fun refresh() {
-        periodSelector.reload()
+        root = buildUI()
     }
 
     private fun buildUI(): VBox {
@@ -115,9 +109,12 @@ class ExpensesPropertyUkPane(
                 wrappingLabel("Expenses (property, UK)").apply {
                     style = "-fx-font-size: 22px; -fx-font-weight: bold;"
                 },
-                hintLabel("Record allowable expenses for the selected property and quarter."),
+                hintLabel(
+                    "Record allowable expenses for the selected property. " +
+                            "The tax year is derived from the transaction date."
+                ),
                 propertySelector.root,
-                periodSelector.root,
+                taxYearSelector.root,
                 finalDeclarationLock.banner,
                 buildEntryForm(),
                 buildEntriesTable(),
@@ -127,39 +124,45 @@ class ExpensesPropertyUkPane(
     }
 
     private fun reloadIfReady() {
-        loadGeneration++ // invalidates any load still in flight for a
-        // previous selection, including one that hasn't returned yet
-        val periodId = currentPeriodId
+        loadGeneration++
         val property = currentProperty
-        if (periodId == null || property == null) {
+        val taxYear  = currentTaxYear
+        if (property == null || taxYear == null) {
             entries.clear()
+            refreshTotal()
             applyLock(isFinalDeclared = false, taxYear = "")
-            onStatusChange("No period or property selected")
+            onStatusChange("No property or tax year selected")
             return
         }
-        loadEntries(periodId, property.id)
+        loadEntries(property.id, taxYear)
         onStatusChange("Loaded expenses for ${property.address}")
     }
 
-    private fun loadEntries(periodId: Int, propertyId: Int) {
+    private fun loadEntries(propertyId: Int, taxYear: String) {
         val generation = loadGeneration
         scope.launch(Dispatchers.IO) {
-            val loaded  = ExpensePropertyUkRepository.currentForPeriodAndProperty(periodId, propertyId)
-            val taxYear = PeriodRepository.findById(periodId)?.taxYear
-            val locked  = taxYear != null && SubmissionRepository.isFinalDeclared(userId, taxYear)
-            kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+            val loaded = ExpensePropertyUkRepository.currentForPropertyAndYear(propertyId, taxYear)
+            val locked = SubmissionRepository.isFinalDeclared(userId, taxYear)
+            withContext(Dispatchers.JavaFx) {
                 if (generation != loadGeneration) return@withContext
                 entries.setAll(loaded)
                 refreshTotal()
-                applyLock(isFinalDeclared = locked, taxYear = taxYear ?: "")
+                entriesHeading.text     = "Entries in $taxYear"
+                entriesPlaceholder.text = "No expense entries for $taxYear"
+                applyLock(isFinalDeclared = locked, taxYear = taxYear)
             }
         }
     }
 
     private fun applyLock(isFinalDeclared: Boolean, taxYear: String) {
-        val controls = listOfNotNull(categoryPicker, amountField, descField, dateField, addBtn, deleteBtn)
+        val controls = listOfNotNull(categoryPicker, amountField, descField, dateField, addBtn, editBtn, deleteBtn)
         finalDeclarationLock.update(isFinalDeclared, taxYear, *controls.toTypedArray())
     }
+
+    // -------------------------------------------------------------------------
+    // Entry form, shared between "New entry" and "Edit entry". Field order
+    // matches the table columns below: Date, Category, Description, Amount.
+    // -------------------------------------------------------------------------
 
     private fun buildEntryForm(): VBox {
         categoryPicker.apply {
@@ -187,73 +190,195 @@ class ExpensesPropertyUkPane(
 
         val newAddBtn = Button("Add").apply {
             styleClass.add("primary-action-button")
-            setOnAction { handleAdd() }
+            setOnAction { if (editingEntryId != null) handleSaveEdit() else handleAdd() }
         }
         addBtn = newAddBtn
+
+        val newCancelEditBtn = Button("Cancel edit").apply {
+            styleClass.add("secondary-action-button")
+            isVisible = false
+            isManaged = false
+            setOnAction { exitEditMode() }
+        }
+        cancelEditBtn = newCancelEditBtn
 
         return VBox(8.0).apply {
             padding = Insets(12.0, 16.0, 12.0, 16.0)
             styleClass.add("content-card")
             style   = "-fx-border-radius: 8; -fx-background-radius: 8;"
             children.addAll(
-                wrappingLabel("New entry").apply { style = "-fx-font-weight: bold;" },
+                entryFormHeading,
                 Separator(),
                 HBox(10.0).apply {
                     alignment = Pos.CENTER_LEFT
-                    children.addAll(categoryPicker, amountField, descField, dateField, newAddBtn)
+                    children.addAll(dateField, categoryPicker, descField, amountField, newAddBtn, newCancelEditBtn)
                 },
             )
         }
     }
 
+    /** Validates the form. Returns the error text, or null if valid. */
+    private fun validationErrors(): String? {
+        val errors     = mutableListOf<String>()
+        val amountText = amountField.text.trim()
+        val amount     = amountText.toDoubleOrNull()
+        val dateText   = dateField.text.trim()
+
+        if (categoryPicker.value == null) errors += "Please select a category."
+        if (amountText.isBlank())         errors += "Please enter an amount."
+        else if (amount == null)          errors += "Amount must be a number (e.g. 250.00)."
+        else if (amount <= 0)             errors += "Amount must be greater than zero."
+        if (descField.text.trim().isBlank()) errors += "Please enter a description."
+        if (dateText.isBlank())           errors += "Please enter a transaction date."
+        else if (!isValidDate(dateText))  errors += "Date must be in format YYYY-MM-DD (e.g. 2026-07-15)."
+
+        return if (errors.isEmpty()) null else errors.joinToString("\n")
+    }
+
     private fun handleAdd() {
-        val periodId = currentPeriodId
         val property = currentProperty
-        if (periodId == null || property == null) {
-            Dialogs.showError("Please select a property and period first.")
+        val taxYear  = currentTaxYear
+        if (property == null || taxYear == null) {
+            Dialogs.showError("Please select a property first.")
             return
         }
 
-        val errors     = mutableListOf<String>()
-        val category   = categoryPicker.value
-        val amountText = amountField.text.trim()
-        val amount     = amountText.toDoubleOrNull()
-        val desc       = descField.text.trim()
-        val dateText   = dateField.text.trim()
+        validationErrors()?.let { Dialogs.showError(it, title = "Validation Error"); return }
 
-        if (category == null)            errors += "Please select a category."
-        if (amountText.isBlank())        errors += "Please enter an amount."
-        else if (amount == null)         errors += "Amount must be a number (e.g. 250.00)."
-        else if (amount <= 0)            errors += "Amount must be greater than zero."
-        if (desc.isBlank())              errors += "Please enter a description."
-        if (dateText.isBlank())          errors += "Please enter a transaction date."
-        else if (!isValidDate(dateText)) errors += "Date must be in format YYYY-MM-DD (e.g. 2025-07-15)."
+        val category = categoryPicker.value!!
+        val amount   = amountField.text.trim().toDouble()
+        val desc     = descField.text.trim()
+        val dateText = dateField.text.trim()
 
-        if (errors.isNotEmpty()) {
-            Dialogs.showError(errors.joinToString("\n"), title = "Validation Error")
+        val derivedTaxYear = taxYearForDate(dateText)
+        if (derivedTaxYear != taxYear) {
+            Dialogs.showError(wrongTaxYearMessage(dateText, derivedTaxYear, taxYear), title = "Wrong tax year")
             return
         }
 
         scope.launch(Dispatchers.IO) {
             try {
+                val periodId = PeriodRepository.getOrCreateStandard(dateText).id
                 val entry = ExpensePropertyUkRepository.record(
                     periodId        = periodId,
                     userId          = userId,
                     propertyId      = property.id,
-                    category        = category!!.dbKey,
-                    amount          = amount!!,
+                    category        = category.dbKey,
+                    amount          = amount,
                     description     = desc,
                     transactionDate = dateText,
                 )
-                kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+                withContext(Dispatchers.JavaFx) {
                     entries.add(entry)
                     refreshTotal()
                     clearForm()
                     onStatusChange("Expense entry added ✓")
                 }
             } catch (e: FinalDeclarationLockedException) {
-                kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+                withContext(Dispatchers.JavaFx) {
                     Dialogs.showError(e.message ?: "This tax year can no longer be amended.", title = "Tax year locked")
+                    reloadIfReady()
+                }
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Edit: reuses the New Entry form. "Edit selected" populates the form and
+    // turns Add into "Save changes"; "Cancel edit" returns to add mode.
+    // -------------------------------------------------------------------------
+
+    private fun handleEditSelected(table: TableView<ExpensePropertyUkEntry>) {
+        val selected = table.selectionModel.selectedItem
+        if (selected == null) {
+            Dialogs.showError("Please select an entry to edit.")
+            return
+        }
+        enterEditMode(selected)
+    }
+
+    private fun enterEditMode(entry: ExpensePropertyUkEntry) {
+        editingEntryId = entry.id
+
+        categoryPicker.value = ExpenseCategory.entries.firstOrNull { it.dbKey == entry.category }
+        amountField.text     = "%.2f".format(entry.amount)
+        descField.text       = entry.description
+        dateField.text       = entry.transactionDate
+
+        entryFormHeading.text    = "Edit entry"
+        addBtn?.text             = "Save changes"
+        cancelEditBtn?.isVisible = true
+        cancelEditBtn?.isManaged = true
+
+        propertySelector.root.isDisable = true
+        taxYearSelector.root.isDisable  = true
+
+        editBtn?.isDisable   = true
+        deleteBtn?.isDisable = true
+    }
+
+    private fun exitEditMode() {
+        editingEntryId = null
+        entryFormHeading.text    = "New entry"
+        addBtn?.text             = "Add"
+        cancelEditBtn?.isVisible = false
+        cancelEditBtn?.isManaged = false
+        propertySelector.root.isDisable = false
+        taxYearSelector.root.isDisable  = false
+        editBtn?.isDisable   = false
+        deleteBtn?.isDisable = false
+        clearForm()
+    }
+
+    private fun handleSaveEdit() {
+        val existingId = editingEntryId ?: return
+        val property   = currentProperty
+        val taxYear    = currentTaxYear
+        if (property == null || taxYear == null) {
+            Dialogs.showError("Please select a property first.")
+            return
+        }
+
+        validationErrors()?.let { Dialogs.showError(it, title = "Validation Error"); return }
+
+        val category = categoryPicker.value!!
+        val amount   = amountField.text.trim().toDouble()
+        val desc     = descField.text.trim()
+        val dateText = dateField.text.trim()
+
+        val derivedTaxYear = taxYearForDate(dateText)
+        if (derivedTaxYear != taxYear) {
+            Dialogs.showError(
+                wrongTaxYearMessage(dateText, derivedTaxYear, taxYear, editing = true),
+                title = "Wrong tax year",
+            )
+            return
+        }
+
+        scope.launch(Dispatchers.IO) {
+            try {
+                val periodId = PeriodRepository.getOrCreateStandard(dateText).id
+                val edited = ExpensePropertyUkRepository.edit(
+                    existingId      = existingId,
+                    periodId        = periodId,
+                    userId          = userId,
+                    propertyId      = property.id,
+                    category        = category.dbKey,
+                    amount          = amount,
+                    description     = desc,
+                    transactionDate = dateText,
+                )
+                withContext(Dispatchers.JavaFx) {
+                    val idx = entries.indexOfFirst { it.id == existingId }
+                    if (idx >= 0) entries[idx] = edited else entries.add(edited)
+                    refreshTotal()
+                    exitEditMode()
+                    onStatusChange("Expense entry updated ✓")
+                }
+            } catch (e: FinalDeclarationLockedException) {
+                withContext(Dispatchers.JavaFx) {
+                    Dialogs.showError(e.message ?: "This tax year can no longer be amended.", title = "Tax year locked")
+                    exitEditMode()
                     reloadIfReady()
                 }
             }
@@ -263,7 +388,7 @@ class ExpensesPropertyUkPane(
     private fun buildEntriesTable(): VBox {
         val table = TableView<ExpensePropertyUkEntry>(entries).apply {
             prefHeight  = 260.0
-            placeholder = wrappingLabel("No expense entries for this period")
+            placeholder = entriesPlaceholder
             columns.addAll(
                 TableColumn<ExpensePropertyUkEntry, String>("Date").apply {
                     prefWidth = 110.0
@@ -291,6 +416,12 @@ class ExpensesPropertyUkPane(
             )
         }
 
+        val newEditBtn = Button("Edit selected").apply {
+            styleClass.add("primary-action-button")
+            setOnAction { handleEditSelected(table) }
+        }
+        editBtn = newEditBtn
+
         val newDeleteBtn = Button("Delete selected").apply {
             styleClass.add("primary-action-button")
             setOnAction {
@@ -308,13 +439,13 @@ class ExpensesPropertyUkPane(
                 scope.launch(Dispatchers.IO) {
                     try {
                         ExpensePropertyUkRepository.delete(selected.id)
-                        kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+                        withContext(Dispatchers.JavaFx) {
                             entries.remove(selected)
                             refreshTotal()
                             onStatusChange("Entry deleted")
                         }
                     } catch (e: FinalDeclarationLockedException) {
-                        kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
+                        withContext(Dispatchers.JavaFx) {
                             Dialogs.showError(e.message ?: "This tax year can no longer be amended.", title = "Tax year locked")
                             reloadIfReady()
                         }
@@ -329,10 +460,10 @@ class ExpensesPropertyUkPane(
             styleClass.add("content-card")
             style   = "-fx-border-radius: 8; -fx-background-radius: 8;"
             children.addAll(
-                wrappingLabel("Entries this period").apply { style = "-fx-font-weight: bold;" },
+                entriesHeading,
                 Separator(),
                 table,
-                newDeleteBtn,
+                HBox(10.0, newEditBtn, newDeleteBtn),
             )
         }
     }
@@ -344,7 +475,7 @@ class ExpensesPropertyUkPane(
             style     = "-fx-border-radius: 6; -fx-background-radius: 6;"
             alignment = Pos.CENTER_LEFT
             children.addAll(
-                wrappingLabel("Period total:").apply { style = "-fx-font-weight: bold;" },
+                wrappingLabel("Year total:").apply { style = "-fx-font-weight: bold;" },
                 totalLabel,
             )
         }

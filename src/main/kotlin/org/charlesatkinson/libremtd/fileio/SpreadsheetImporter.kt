@@ -20,7 +20,6 @@ package org.charlesatkinson.libremtd.fileio
 import org.apache.poi.ss.usermodel.*
 import org.apache.poi.ss.usermodel.DateUtil
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
-import org.charlesatkinson.libremtd.database.Period
 import org.charlesatkinson.libremtd.database.PeriodRepository
 import org.charlesatkinson.libremtd.database.PropertyRepository
 import org.charlesatkinson.libremtd.database.tables.*
@@ -163,14 +162,12 @@ object SpreadsheetImporter {
         if (conflicts.isNotEmpty()) {
             return ImportResult.ConflictsFound(conflicts) {
                 val warnings = mutableListOf<String>()
-                val periods  = periodsForTable(table, taxYear)
-                transaction { persist(rows, table, userId, taxYear, periods, warnings) }
+                transaction { persist(rows, table, userId, taxYear, warnings) }
             }
         }
 
         val warnings = mutableListOf<String>()
-        val periods  = periodsForTable(table, taxYear)
-        return transaction { persist(rows, table, userId, taxYear, periods, warnings) }
+        return transaction { persist(rows, table, userId, taxYear, warnings) }
     }
 
     // ------------------------------------------------------------------
@@ -215,8 +212,7 @@ object SpreadsheetImporter {
             var totalUnchanged = 0; var totalDeleted = 0
             val result = transaction {
                 for ((table, rows) in parsed) {
-                    val periods = periodsForTable(table, taxYear)
-                    val r = persist(rows, table, userId, taxYear, periods, warnings)
+                    val r = persist(rows, table, userId, taxYear, warnings)
                     when (r) {
                         is ImportResult.Success -> {
                             totalInserted   += r.summary.inserted
@@ -239,36 +235,6 @@ object SpreadsheetImporter {
             ImportResult.ConflictsFound(allConflicts) { doImport() }
         else
             doImport()
-    }
-
-    // ------------------------------------------------------------------
-    // Period resolution
-    // ------------------------------------------------------------------
-
-    /**
-     * Returns the HMRC-defined periods for [taxYear] for tables that use
-     * them, or an empty list for tables that do not (dividends, savings).
-     * Periods are not per-user.
-     */
-    private fun periodsForTable(table: ExportTable, taxYear: String): List<Period> =
-        when (table) {
-            ExportTable.INCOME_PROPERTY,
-            ExportTable.EXPENSES          -> PeriodRepository.findByTaxYear(taxYear)
-            ExportTable.INCOME_DIVIDENDS,
-            ExportTable.INCOME_SAVINGS    -> emptyList()
-        }
-
-    /**
-     * Finds the period whose startDate..endDate range contains
-     * [transactionDate].  Returns null if no period covers the date.
-     */
-    private fun periodForDate(periods: List<Period>, transactionDate: String): Period? {
-        val date = LocalDate.parse(transactionDate)
-        return periods.firstOrNull { p ->
-            val start = LocalDate.parse(p.startDate)
-            val end   = LocalDate.parse(p.endDate)
-            date >= start && date <= end
-        }
     }
 
     // ------------------------------------------------------------------
@@ -722,16 +688,17 @@ object SpreadsheetImporter {
      * - id null:  insert as a new record.
      *
      * For INCOME_PROPERTY and EXPENSES, period_id is resolved per non-delete
-     * row by matching the transaction date against HMRC period ranges.  If no
-     * period covers a row's date, an ImportResult.Failure is returned.
-     * Delete rows do not require period resolution.
+     * row from the transaction date's own standard quarter (see
+     * PeriodRepository.getOrCreateStandard) — this is pure calendar
+     * arithmetic, so it always succeeds for a date that has already passed
+     * the format/range check in [parseRows]; no HMRC fetch is needed
+     * beforehand. Delete rows do not require period resolution.
      */
     private fun persist(
         rows:     List<ParsedRow>,
         table:    ExportTable,
         userId:   Int,
         taxYear:  String,
-        periods:  List<Period>,
         warnings: MutableList<String>,
     ): ImportResult {
         var inserted = 0; var superseded = 0; var unchanged = 0; var deleted = 0
@@ -749,20 +716,7 @@ object SpreadsheetImporter {
             // ── Resolve period_id for tables that require it ──────────────────
             val periodId: Int? = when (table) {
                 ExportTable.INCOME_PROPERTY,
-                ExportTable.EXPENSES -> {
-                    val period = periodForDate(periods, row.transactionDate)
-                    if (period == null) {
-                        return ImportResult.Failure(
-                            listOf(
-                                "Sheet row ${row.sheetRowNum}: Transaction Date " +
-                                        "\"${row.transactionDate}\" does not fall within any " +
-                                        "known HMRC period for tax year $taxYear.  " +
-                                        "Fetch obligations from HMRC before importing."
-                            )
-                        )
-                    }
-                    period.id
-                }
+                ExportTable.EXPENSES -> PeriodRepository.getOrCreateStandard(row.transactionDate).id
                 ExportTable.INCOME_DIVIDENDS,
                 ExportTable.INCOME_SAVINGS -> null
             }
