@@ -23,16 +23,17 @@ import javafx.scene.control.*
 import javafx.scene.layout.*
 import javafx.stage.FileChooser
 import kotlinx.coroutines.CoroutineScope
+import org.charlesatkinson.libremtd.database.Property
 import org.charlesatkinson.libremtd.database.PropertyRepository
+import org.charlesatkinson.libremtd.database.PropertyType
 import org.charlesatkinson.libremtd.database.availableTaxYears
-import org.charlesatkinson.libremtd.fileio.ExportTable
-import org.charlesatkinson.libremtd.fileio.PropertyDisplay
 import org.charlesatkinson.libremtd.fileio.SpreadsheetExporter
-import org.charlesatkinson.libremtd.fileio.fetchRows
-import org.charlesatkinson.libremtd.fileio.incomePropertyColumns
+import org.charlesatkinson.libremtd.fileio.components.ExportTable
+import org.charlesatkinson.libremtd.fileio.components.sheetSpecFor
 import org.charlesatkinson.libremtd.fileio.propertyDisplayString
 import org.charlesatkinson.libremtd.ui.components.TaxYearItem
 import org.charlesatkinson.libremtd.ui.components.UiPreferences
+import org.charlesatkinson.libremtd.ui.components.countInWords
 import org.charlesatkinson.libremtd.ui.components.wrappingLabel
 import java.io.File
 
@@ -53,13 +54,9 @@ class ExportSpreadsheetPane(
         override fun toString() = uiLabel
     }
 
-    private val tableChoices = listOf(
-        TableChoice(ExportTable.INCOME_PROPERTY,  "Income (property)"),
-        TableChoice(ExportTable.INCOME_DIVIDENDS, "Income (dividends)"),
-        TableChoice(ExportTable.EXPENSES,         "Expenses"),
-        TableChoice(ExportTable.INCOME_SAVINGS,   "Income (savings)"),
-        TableChoice(null,                         "All tables (one file, four sheets)"),
-    )
+    private val tableChoices: List<TableChoice> =
+        ExportTable.entries.map { TableChoice(it, it.label) } +
+                TableChoice(null, "All tables (one file, ${countInWords(ExportTable.entries.size)} sheets)")
 
     private val tablePicker = ComboBox<TableChoice>().apply {
         items.addAll(tableChoices)
@@ -78,7 +75,7 @@ class ExportSpreadsheetPane(
         HBox.setHgrow(taxYearCombo, Priority.ALWAYS)
     }
 
-    // ── Property filter — INCOME_PROPERTY and EXPENSES only ───────────────
+    // ── Property filter: only for sheets with a property column ───────────
 
     private data class PropertyItem(val id: Int?, val label: String) {
         override fun toString() = label
@@ -93,9 +90,11 @@ class ExportSpreadsheetPane(
         HBox.setHgrow(propertyCombo, Priority.ALWAYS)
     }
 
-    // ── Cached property data ──────────────────────────────────────────────
+    private var userProperties: List<Property> = emptyList()
 
-    private var propertyDisplayList: List<PropertyDisplay> = emptyList()
+    // True while the property combo is being repopulated by code, so the
+    // programmatic selection does not overwrite the saved preference.
+    private var refreshingProperties = false
 
     // ── Status / export button ────────────────────────────────────────────
 
@@ -113,7 +112,14 @@ class ExportSpreadsheetPane(
     init {
         root = buildUI()
 
-        // Persist selections whenever the user changes them.
+        userProperties = PropertyRepository.findByUser(userId)
+        loadTaxYears()
+        restoreSelections()
+
+        // The change handlers are installed only now. A ComboBox fires its
+        // action on programmatic value changes as well as user ones, so
+        // installing them earlier made the defaults set while loading
+        // overwrite the saved preferences before they could be restored.
         tablePicker.setOnAction {
             tablePicker.value?.let { prefs.lastExportTable = it.table?.name }
             onTableSelected()
@@ -122,16 +128,9 @@ class ExportSpreadsheetPane(
             taxYearCombo.value?.let { prefs.lastTaxYear = it.value }
         }
         propertyCombo.setOnAction {
-            // null id = "All properties" sentinel; store null to clear the key.
-            prefs.lastPropertyId = propertyCombo.value?.id
+            if (!refreshingProperties) prefs.lastPropertyId = propertyCombo.value?.id
         }
-
         exportButton.setOnAction { onExport() }
-
-        loadProperties()   // must come before restoreSelections()
-        loadTaxYears()
-        restoreSelections()
-        onTableSelected()
     }
 
     // ── UI builder ────────────────────────────────────────────────────────
@@ -154,8 +153,16 @@ class ExportSpreadsheetPane(
                 wrappingLabel("Export to .xlsx spreadsheet").apply {
                     style = "-fx-font-size: 22px; -fx-font-weight: bold;"
                 },
-                wrappingLabel("Export entries to a spreadsheet.  Can be modified and imported back.").apply {
-                    style = "-fx-text-fill: #555555;"
+                wrappingLabel(
+                    "Export entries to a spreadsheet.  The spreadsheet can be changed and imported.  " +
+                            "You may delete any sheets you do not need.  " +
+                            "Rows which were exported have an id value.  " +
+                            "You can delete those entries by deleting all other cells.  " +
+                            "You can change those entries by changing other cell(s).  " +
+                            "You can add records by creating new rows."
+                ).apply {
+                    style      = "-fx-text-fill: #555555;"
+                    isWrapText = true
                 },
                 Separator(),
                 formGrid,
@@ -170,20 +177,6 @@ class ExportSpreadsheetPane(
 
     // ── Data loaders ──────────────────────────────────────────────────────
 
-    private fun loadProperties() {
-        propertyDisplayList = PropertyRepository.findByUser(userId).map { p ->
-            PropertyDisplay(
-                id      = p.id,
-                display = propertyDisplayString(p.address, p.postcode, p.countryCode),
-            )
-        }
-
-        val allItem = PropertyItem(id = null, label = "All properties")
-        val items   = listOf(allItem) + propertyDisplayList.map { PropertyItem(it.id, it.display) }
-        propertyCombo.items.setAll(items)
-        propertyCombo.value = allItem   // default; overridden by restoreSelections()
-    }
-
     private fun loadTaxYears() {
         val years = availableTaxYears().sortedDescending().map { TaxYearItem(it) }
         taxYearCombo.items.setAll(years)
@@ -191,46 +184,54 @@ class ExportSpreadsheetPane(
     }
 
     /**
-     * Restores the table, tax year, and property selections from
-     * [prefs], falling back to sensible defaults when no saved
-     * value exists or the saved value no longer matches any current item.
-     *
-     * Must be called after [loadProperties] and [loadTaxYears].
+     * Restores the table and tax year selections from [prefs], falling back
+     * to the defaults when nothing was saved or the saved value no longer
+     * matches an item, then fills the property combo for the chosen table.
      */
     private fun restoreSelections() {
-        // Table
-        val savedTable = prefs.lastExportTable
-        if (savedTable != null) {
-            tableChoices.firstOrNull { it.table?.name == savedTable }
-                ?.let { tablePicker.value = it }
+        prefs.lastExportTable?.let { saved ->
+            tableChoices.firstOrNull { it.table?.name == saved }?.let { tablePicker.value = it }
         }
-
-        // Tax year
-        val savedYear = prefs.lastTaxYear
-        if (savedYear != null) {
-            taxYearCombo.items.firstOrNull { it.value == savedYear }
-                ?.let { taxYearCombo.value = it }
+        prefs.lastTaxYear?.let { saved ->
+            taxYearCombo.items.firstOrNull { it.value == saved }?.let { taxYearCombo.value = it }
         }
-
-        // Property — uses the shared lastPropertyId key so the selection is
-        // consistent with other panes that have a property selector.
-        val savedPropertyId = prefs.lastPropertyId
-        if (savedPropertyId != null) {
-            propertyCombo.items.firstOrNull { it.id == savedPropertyId }
-                ?.let { propertyCombo.value = it }
-        }
-        // If savedPropertyId is null the default "All properties" item set in
-        // loadProperties() stands.
+        onTableSelected()
     }
 
-    // ── Selector visibility ───────────────────────────────────────────────
+    // ── Selector visibility and contents ──────────────────────────────────
+
+    private fun propertyTypesFor(choice: TableChoice?): Set<PropertyType> {
+        val tables = if (choice?.table != null) listOf(choice.table) else ExportTable.entries
+        return tables.mapNotNull { sheetSpecFor(it).propertyType }.toSet()
+    }
 
     private fun onTableSelected() {
-        val choice = tablePicker.value ?: return
-        propertyRow.isVisible = choice.table == ExportTable.INCOME_PROPERTY ||
-                choice.table == ExportTable.EXPENSES        ||
-                choice.table == null
+        refreshPropertyCombo()
         statusLabel.text = ""
+    }
+
+    /**
+     * Lists only properties of the type(s) the chosen sheet(s) accept, and
+     * hides the row when no chosen sheet has a property column.
+     */
+    private fun refreshPropertyCombo() {
+        val types = propertyTypesFor(tablePicker.value)
+        val allItem = PropertyItem(id = null, label = "All properties")
+        val relevant = userProperties
+            .filter { it.propertyType in types }
+            .map { PropertyItem(it.id, propertyDisplayString(it.address, it.postcode, it.countryCode)) }
+
+        refreshingProperties = true
+        try {
+            propertyCombo.items.setAll(listOf(allItem) + relevant)
+            val savedId = prefs.lastPropertyId
+            propertyCombo.value = relevant.firstOrNull { it.id == savedId } ?: allItem
+        } finally {
+            refreshingProperties = false
+        }
+
+        propertyRow.isVisible = types.isNotEmpty()
+        propertyRow.isManaged = types.isNotEmpty()
     }
 
     // ── Export action ─────────────────────────────────────────────────────
@@ -259,63 +260,19 @@ class ExportSpreadsheetPane(
         try {
             exportButton.isDisable = true
             setStatus("Exporting…")
-            if (choice.table != null) exportSingleTable(choice.table, taxYear.value, file)
-            else                      exportAllTables(taxYear.value, file)
+            SpreadsheetExporter.exportTables(
+                tables           = choice.table?.let { listOf(it) } ?: ExportTable.entries,
+                userId           = userId,
+                taxYear          = taxYear.value,
+                filterPropertyId = propertyCombo.value?.id,
+                outputPath       = file.toPath(),
+            )
             setStatus("Exported: ${file.name}")
         } catch (ex: Exception) {
             setStatus("Export failed: ${ex.message}", error = true)
         } finally {
             exportButton.isDisable = false
         }
-    }
-
-    private fun exportSingleTable(table: ExportTable, taxYear: String, file: File) {
-        val filterPropertyId   = propertyCombo.value?.id
-        val propertyDisplayMap = propertyDisplayList.associate { it.id to it.display }
-
-        val cols = when (table) {
-            ExportTable.INCOME_PROPERTY ->
-                incomePropertyColumns(propertyDisplayList.map { it.display })
-            else ->
-                SpreadsheetExporter.staticColumnsFor(table)
-        }
-
-        val rows = fetchRows(
-            table              = table,
-            userId             = userId,
-            taxYear            = taxYear,
-            filterPropertyId   = filterPropertyId,
-            propertyDisplayMap = propertyDisplayMap,
-        )
-
-        SpreadsheetExporter.exportSingle(table, cols, rows, file.toPath())
-    }
-
-    private fun exportAllTables(taxYear: String, file: File) {
-        val filterPropertyId       = propertyCombo.value?.id
-        val propertyDisplayMap     = propertyDisplayList.associate { it.id to it.display }
-        val propertyDisplayStrings = propertyDisplayList.map { it.display }
-
-        val entries = mapOf(
-            ExportTable.INCOME_PROPERTY to Pair(
-                incomePropertyColumns(propertyDisplayStrings),
-                fetchRows(ExportTable.INCOME_PROPERTY, userId, taxYear, filterPropertyId, propertyDisplayMap),
-            ),
-            ExportTable.INCOME_DIVIDENDS to Pair(
-                SpreadsheetExporter.staticColumnsFor(ExportTable.INCOME_DIVIDENDS),
-                fetchRows(ExportTable.INCOME_DIVIDENDS, userId, taxYear),
-            ),
-            ExportTable.EXPENSES to Pair(
-                SpreadsheetExporter.staticColumnsFor(ExportTable.EXPENSES),
-                fetchRows(ExportTable.EXPENSES, userId, taxYear, filterPropertyId),
-            ),
-            ExportTable.INCOME_SAVINGS to Pair(
-                SpreadsheetExporter.staticColumnsFor(ExportTable.INCOME_SAVINGS),
-                fetchRows(ExportTable.INCOME_SAVINGS, userId, taxYear),
-            ),
-        )
-
-        SpreadsheetExporter.exportAll(entries, file.toPath())
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────

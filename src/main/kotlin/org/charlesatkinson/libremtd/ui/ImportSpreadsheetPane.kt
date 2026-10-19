@@ -35,14 +35,22 @@ import org.charlesatkinson.libremtd.fileio.ImportResult
 import org.charlesatkinson.libremtd.fileio.SpreadsheetImporter
 import org.charlesatkinson.libremtd.ui.components.TaxYearItem
 import org.charlesatkinson.libremtd.ui.components.UiPreferences
+import org.charlesatkinson.libremtd.ui.components.countInWords
 import org.charlesatkinson.libremtd.ui.components.wrappingLabel
 import org.slf4j.LoggerFactory
 import java.io.File
 
+/**
+ * @param onImported Called on the JavaFX thread after every successful
+ *                   import, so the host can discard cached panes which
+ *                   would otherwise keep showing entries as they were
+ *                   before the import changed the database.
+ */
 class ImportSpreadsheetPane(
     private val scope: CoroutineScope,
     private val userId: Int,
     private val onStatusChange: (String) -> Unit,
+    private val onImported: () -> Unit = {},
 ) {
     private val prefs = UiPreferences(userId)
     val root: VBox
@@ -78,13 +86,16 @@ class ImportSpreadsheetPane(
     init {
         root = buildUI()
 
+        // Loaded before the change handler is installed: a ComboBox fires
+        // its action on programmatic changes too, which would otherwise
+        // overwrite the saved preference while it is being restored.
+        loadTaxYears()
+
         taxYearCombo.setOnAction {
             taxYearCombo.value?.let { prefs.lastTaxYear = it.value }
         }
 
         importButton.setOnAction { onImport() }
-
-        loadTaxYears()
     }
 
     // ── UI builder ────────────────────────────────────────────────────────
@@ -98,11 +109,9 @@ class ImportSpreadsheetPane(
                 },
                 wrappingLabel(
                     "Import entries from a spreadsheet previously exported by LibreMTD.  " +
-                            "The table is inferred from the sheet name.  " +
-                            "Rows which were exported have an id.  " +
-                            "Rows with an id and all other cells blank are deleted.  " +
-                            "Rows with an id and changed cell(s) are replaced.  " +
-                            "Rows with no id are inserted as new records."
+                            "Either the whole file is imported or nothing is.  " +
+                            "Every date must fall inside the selected tax year, which must not " +
+                            "have been finally declared."
                 ).apply {
                     style      = "-fx-text-fill: #555555;"
                     isWrapText = true
@@ -148,7 +157,12 @@ class ImportSpreadsheetPane(
         setStatus("Validating and importing…")
 
         scope.launch(Dispatchers.IO) {
-            val result = SpreadsheetImporter.import(file.toPath(), userId, taxYear.value)
+            val result = try {
+                SpreadsheetImporter.import(file.toPath(), userId, taxYear.value)
+            } catch (ex: Exception) {
+                log.error("Import failed unexpectedly", ex)
+                ImportResult.Failure(listOf("Import failed: ${ex.message ?: ex.javaClass.simpleName}"))
+            }
 
             withContext(Dispatchers.JavaFx) {
                 importButton.isDisable = false
@@ -163,18 +177,24 @@ class ImportSpreadsheetPane(
         when (result) {
             is ImportResult.Success -> {
                 val s   = result.summary
+                val parts = mutableListOf(
+                    "${s.inserted} inserted",
+                    "${s.superseded} superseded",
+                    "${s.deleted} deleted",
+                    "${s.unchanged} unchanged",
+                )
+                if (s.skipped > 0) parts += "${s.skipped} skipped as duplicates"
                 val msg = buildString {
-                    append("Import complete — ")
-                    append("${s.inserted} inserted, ")
-                    append("${s.superseded} superseded, ")
-                    append("${s.deleted} deleted, ")
-                    append("${s.unchanged} unchanged.")
+                    append("Import complete – ")
+                    append(parts.joinToString(", "))
+                    append(".")
                     if (s.warnings.isNotEmpty()) {
                         append("\nWarnings:\n")
                         append(s.warnings.joinToString("\n"))
                     }
                 }
                 setStatus(msg, error = false)
+                onImported()
             }
 
             is ImportResult.Failure -> {
@@ -182,7 +202,7 @@ class ImportSpreadsheetPane(
             }
 
             is ImportResult.ConflictsFound -> {
-                showConflictDialog(result.conflicts, result.proceed)
+                showConflictDialog(result.conflicts, result.proceed, result.proceedSkippingDuplicates)
             }
         }
     }
@@ -190,19 +210,22 @@ class ImportSpreadsheetPane(
     // ── Conflict dialog ───────────────────────────────────────────────────
 
     /**
-     * Shows a scrollable, copyable table of conflicting rows and asks the
-     * user whether to cancel or continue inserting them as new records.
+     * Shows a resizable, copyable table of conflicting rows and asks the
+     * user whether to cancel, import everything except the duplicates, or
+     * insert the duplicates as additional records.
      *
-     * If the user chooses to continue, [proceed] is called on a background
-     * thread so the UI remains responsive.
+     * The chosen import runs on a background thread so the UI remains
+     * responsive.
      */
-    private fun showConflictDialog(conflicts: List<ConflictRow>, proceed: () -> ImportResult) {
+    private fun showConflictDialog(
+        conflicts: List<ConflictRow>,
+        proceed: () -> ImportResult,
+        proceedSkippingDuplicates: () -> ImportResult,
+    ) {
         val dialog = Dialog<ButtonType>().apply {
             title      = "Possible duplicate rows found"
-            headerText = "${conflicts.size} row${if (conflicts.size == 1) "" else "s"} in the " +
-                    "spreadsheet may already exist in the database.\n" +
-                    "They have no id but match existing records on all data fields.\n\n" +
-                    "Cancel to abort, or Continue to insert them as additional records."
+            headerText = null
+            isResizable = true
         }
 
         // Copy the application icons from the owner window so the dialog
@@ -214,60 +237,32 @@ class ImportSpreadsheetPane(
             }
         }
 
-        // ── Scrollable conflict table ──────────────────────────────────────
+        fun column(title: String, prefWidth: Double, minWidth: Double, text: (ConflictRow) -> String) =
+            TableColumn<ConflictRow, String>(title).also { col ->
+                col.cellValueFactory = javafx.util.Callback { cdf -> SimpleStringProperty(text(cdf.value)) }
+                col.prefWidth = prefWidth
+                col.minWidth  = minWidth
+            }
+
+        // ── Resizable conflict table ───────────────────────────────────────
+        // Every column keeps its preferred width and only the last one takes
+        // up whatever width is left, so widening the window widens "Details".
         val table = TableView<ConflictRow>().apply {
             isEditable         = false
-            columnResizePolicy = TableView.CONSTRAINED_RESIZE_POLICY
+            columnResizePolicy = TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN
             prefHeight         = 300.0
+            maxWidth           = Double.MAX_VALUE
 
-            columns.addAll(buildList {
-                add(TableColumn<ConflictRow, String>("Sheet row").also { col ->
-                    col.cellValueFactory = javafx.util.Callback { cdf ->
-                        SimpleStringProperty(cdf.value.sheetRowNum.toString())
-                    }
-                    col.prefWidth = 80.0
-                })
-                add(TableColumn<ConflictRow, String>("Existing DB id").also { col ->
-                    col.cellValueFactory = javafx.util.Callback { cdf ->
-                        SimpleStringProperty(cdf.value.existingDbId.toString())
-                    }
-                    col.prefWidth = 100.0
-                })
-                if (conflicts.any { it.propertyDisplay != null }) {
-                    add(TableColumn<ConflictRow, String>("Property").also { col ->
-                        col.cellValueFactory = javafx.util.Callback { cdf ->
-                            SimpleStringProperty(cdf.value.propertyDisplay ?: "")
-                        }
-                        col.prefWidth = 160.0
-                    })
-                }
-                add(TableColumn<ConflictRow, String>("Category").also { col ->
-                    col.cellValueFactory = javafx.util.Callback { cdf ->
-                        SimpleStringProperty(cdf.value.category)
-                    }
-                    col.prefWidth = 140.0
-                })
-                add(TableColumn<ConflictRow, String>("Amount").also { col ->
-                    col.cellValueFactory = javafx.util.Callback { cdf ->
-                        SimpleStringProperty("%.2f".format(cdf.value.amount))
-                    }
-                    col.prefWidth = 90.0
-                })
-                add(TableColumn<ConflictRow, String>("Description").also { col ->
-                    col.cellValueFactory = javafx.util.Callback { cdf ->
-                        SimpleStringProperty(cdf.value.description)
-                    }
-                })
-                add(TableColumn<ConflictRow, String>("Date").also { col ->
-                    col.cellValueFactory = javafx.util.Callback { cdf ->
-                        SimpleStringProperty(cdf.value.transactionDate)
-                    }
-                    col.prefWidth = 100.0
-                })
-            })
+            columns.addAll(
+                column("Sheet",          215.0, 150.0) { it.sheetName },
+                column("Sheet row",       90.0,  90.0) { it.sheetRowNum.toString() },
+                column("Existing DB id", 115.0, 115.0) { it.existingDbId.toString() },
+                column("Details",        300.0, 200.0) { it.summary },
+            )
 
             items.setAll(conflicts)
         }
+        VBox.setVgrow(table, Priority.ALWAYS)
 
         // Ctrl+C copies selected rows as tab-separated text.
         table.setOnKeyPressed { e ->
@@ -275,15 +270,8 @@ class ImportSpreadsheetPane(
                 val selected = table.selectionModel.selectedItems
                 if (selected.isNotEmpty()) {
                     val text = selected.joinToString("\n") { r ->
-                        listOfNotNull(
-                            r.sheetRowNum.toString(),
-                            r.existingDbId.toString(),
-                            r.propertyDisplay,
-                            r.category,
-                            "%.2f".format(r.amount),
-                            r.description,
-                            r.transactionDate,
-                        ).joinToString("\t")
+                        listOf(r.sheetName, r.sheetRowNum.toString(), r.existingDbId.toString(), r.summary)
+                            .joinToString("\t")
                     }
                     javafx.scene.input.Clipboard.getSystemClipboard().setContent(
                         javafx.scene.input.ClipboardContent().also { it.putString(text) }
@@ -292,31 +280,47 @@ class ImportSpreadsheetPane(
             }
         }
 
-        val cancelButton   = ButtonType("Cancel",   ButtonBar.ButtonData.CANCEL_CLOSE)
-        val continueButton = ButtonType("Continue", ButtonBar.ButtonData.OK_DONE)
-        dialog.dialogPane.buttonTypes.addAll(cancelButton, continueButton)
+        val count = countInWords(conflicts.size).replaceFirstChar { it.uppercase() }
+        val explanation = "$count ${if (conflicts.size == 1) "row" else "rows"} in the spreadsheet " +
+                "may already exist in the database.  They have no id but match existing records " +
+                "on all data fields.\n\n" +
+                "\"Skip duplicates and import\" imports everything except these rows.  " +
+                "\"Import duplicates too\" inserts them as additional records.  " +
+                "Cancel imports nothing."
+
+        val cancelButton = ButtonType("Cancel", ButtonBar.ButtonData.CANCEL_CLOSE)
+        val skipButton   = ButtonType("Skip duplicates and import", ButtonBar.ButtonData.OK_DONE)
+        val insertButton = ButtonType("Import duplicates too", ButtonBar.ButtonData.OTHER)
+        dialog.dialogPane.buttonTypes.addAll(cancelButton, skipButton, insertButton)
+
         dialog.dialogPane.content = VBox(8.0,
-            wrappingLabel("Ctrl+C copies selected rows to clipboard.").apply {
+            wrappingLabel(explanation).apply { maxWidth = Double.MAX_VALUE },
+            wrappingLabel("Ctrl+C copies selected rows to the clipboard.  Right-click the text above to copy it.").apply {
                 style = "-fx-text-fill: #555555; -fx-font-size: 11px;"
             },
             table,
         ).also { it.padding = Insets(8.0) }
 
-        dialog.dialogPane.prefWidth  = 800.0
-        dialog.dialogPane.prefHeight = 420.0
+        dialog.dialogPane.minWidth   = 640.0
+        dialog.dialogPane.prefWidth  = 900.0
+        dialog.dialogPane.prefHeight = 480.0
 
         val chosen = dialog.showAndWait().orElse(cancelButton)
-        if (chosen != continueButton) {
-            setStatus("Import cancelled.", error = false)
-            return
+        val action = when (chosen) {
+            skipButton   -> proceedSkippingDuplicates
+            insertButton -> proceed
+            else         -> {
+                setStatus("Import cancelled.", error = false)
+                return
+            }
         }
 
-        // User confirmed — run the import on a background thread.
+        // User confirmed: run the import on a background thread.
         importButton.isDisable = true
         setStatus("Importing…")
         scope.launch(Dispatchers.IO) {
             val result = try {
-                proceed()
+                action()
             } catch (ex: Exception) {
                 log.error("Import failed after conflict dialog", ex)
                 ImportResult.Failure(listOf("Import failed: ${ex.message ?: ex.javaClass.simpleName}"))

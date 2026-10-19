@@ -274,27 +274,44 @@ class HelpPane(
             padding = Insets(8.0)
             children.addAll(
                 heading("Export & Import"),
+                body("Entries can be exported to a spreadsheet, added to or changed there, and " +
+                        "imported back. Spreadsheet data entry is often quicker than the entry " +
+                        "forms in LibreMTD."),
                 subheading("Exporting to a spreadsheet"),
-                body("Use File > Export Spreadsheet to export your income, expenses, and/or " +
-                        "allowances for a selected period to an .xlsx file."),
+                body("Use File > Export spreadsheet. Choose one table, or all tables in one file, " +
+                        "and the tax year. For the property tables you can export all properties " +
+                        "or just one. The tables are Income (dividends), Income (dividends, " +
+                        "special), Income (dividends, foreign), Income (property, UK), Income " +
+                        "(property, foreign), Income (savings), Expenses (property, UK) and " +
+                        "Expenses (property, foreign). Each becomes one sheet, with the same " +
+                        "columns as the table in LibreMTD. Amounts are in pounds, which is why " +
+                        "the amount headings end with (£)."),
                 body("Click 'Export to .xlsx spreadsheet', then accept or modify the file name " +
                         "and choose a destination folder."),
-                subheading("Editing the spreadsheet"),
-                body("Open the exported .xlsx file in LibreOffice Calc, Microsoft Excel, or any " +
-                        "compatible application. You can correct figures, add missing entries, or " +
-                        "reorganise rows. Do not add or remove columns, and do not change the header " +
-                        "row — the importer matches columns by name."),
+                subheading("Changing the spreadsheet"),
+                body("Open the file in LibreOffice Calc, Microsoft Excel or any compatible " +
+                        "application and change it however you like. Rows which were exported " +
+                        "have an id value. To delete an entry, delete all the other cells in its " +
+                        "row. To change an entry, change its other cell(s). To add an entry, " +
+                        "create a new row with no id. You may delete any sheets you do not need. " +
+                        "Do not add, remove or reorder columns: the importer finds columns by " +
+                        "name. Bad values are reported when you import."),
                 subheading("Importing from a spreadsheet"),
-                body("Use File > Import Spreadsheet to import an .xlsx file back into LibreMTD. " +
-                        "Importing replaces existing entries for the selected period and category. " +
-                        "Export first if you want to keep a backup of the current data."),
+                body("Use File > Import spreadsheet and choose the tax year, then the file. " +
+                        "Every sheet LibreMTD recognises by name is imported. Every date must " +
+                        "fall inside the selected tax year, which must not have been finally " +
+                        "declared. Either the whole file is imported or nothing is, and any " +
+                        "problems are listed with their sheet and row number."),
+                body("Entries are never overwritten. A changed entry replaces the old one, which " +
+                        "is marked as superseded in the database for audit purposes. New rows " +
+                        "which match an existing entry on every field are listed, and you can " +
+                        "skip them, insert them anyway, or cancel."),
                 subheading("Typical workflow"),
                 body(
-                    "1. Enter data directly in LibreMTD during the quarter.\n" +
-                            "2. At end of quarter, export to .xlsx to review figures in a spreadsheet.\n" +
-                            "3. Correct any entries in the spreadsheet and save.\n" +
-                            "4. Import the corrected sheet back into LibreMTD.\n" +
-                            "5. Submit the quarterly update from the Submissions pane."
+                    "1. Export the tables you want for the tax year.\n" +
+                            "2. Add, change and delete rows in the spreadsheet, and save it.\n" +
+                            "3. Import the spreadsheet and fix any reported problems.\n" +
+                            "4. Check the entries in LibreMTD."
                 ),
             )
         }

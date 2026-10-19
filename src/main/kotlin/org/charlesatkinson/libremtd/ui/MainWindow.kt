@@ -81,6 +81,51 @@ enum class NavDestination(val label: String, val navLabel: String = label) {
 private val UNCACHED_DESTINATIONS = setOf(NavDestination.HmrcConnect)
 
 /**
+ * The panes which list entries from the database. They load their entries
+ * once, when built, and are then cached, so anything which changes entries
+ * behind their backs (currently only a spreadsheet import) must discard
+ * them — see [discardCachedPanes] — so that the next visit builds them
+ * afresh from the database.
+ */
+internal val ENTRY_DESTINATIONS = setOf(
+    NavDestination.DividendIncome,
+    NavDestination.IncomePropertyUk,
+    NavDestination.IncomePropertyForeign,
+    NavDestination.SavingsIncome,
+    NavDestination.ExpensesPropertyUk,
+    NavDestination.ExpensesPropertyForeign,
+)
+
+/**
+ * The panes which read the user's properties once, when built: the four
+ * property income and expenses panes (for their property selector) and the
+ * export pane (for its property filter). They must be discarded whenever the
+ * Properties pane changes a property, so the next visit sees the change. The
+ * dividends and savings panes are deliberately not included: they have no
+ * property selector, and discarding them would lose a half-typed form for
+ * no reason.
+ */
+internal val PROPERTY_DEPENDENT_DESTINATIONS = setOf(
+    NavDestination.IncomePropertyUk,
+    NavDestination.IncomePropertyForeign,
+    NavDestination.ExpensesPropertyUk,
+    NavDestination.ExpensesPropertyForeign,
+    NavDestination.ExportSpreadsheet,
+)
+
+/**
+ * Removes the panes for [dests] from [cache], if present, so that
+ * [resolvePane] rebuilds them on their next visit. Generic, like
+ * [resolvePane], so it can be unit tested without a live Stage/Scene.
+ */
+internal fun <D> discardCachedPanes(
+    cache: MutableMap<D, javafx.scene.Node>,
+    dests: Set<D>,
+) {
+    dests.forEach { cache.remove(it) }
+}
+
+/**
  * Resolves the pane to show for [dest]: builds a fresh pane for
  * destinations in [uncached], otherwise reuses a pane from [cache] —
  * building and caching it on first visit.
@@ -389,6 +434,7 @@ class MainWindow(
             scope          = scope,
             userId         = user.id,
             onStatusChange = { msg -> setStatus(msg) },
+            onImported     = { discardCachedPanes(paneCache, ENTRY_DESTINATIONS) },
         ).root
         NavDestination.IncomePropertyUk       -> IncomePropertyUkPane(
             scope          = scope,
@@ -401,10 +447,11 @@ class MainWindow(
             onStatusChange = { msg -> setStatus(msg) },
         ).root
         NavDestination.Properties             -> PropertiesPane(
-            scope              = scope,
-            userId             = user.id,
-            settingsRepository = settingsRepository,
-            onStatusChange     = { msg -> setStatus(msg) },
+            scope               = scope,
+            userId              = user.id,
+            settingsRepository  = settingsRepository,
+            onStatusChange      = { msg -> setStatus(msg) },
+            onPropertiesChanged = { discardCachedPanes(paneCache, PROPERTY_DEPENDENT_DESTINATIONS) },
         ).root
         NavDestination.SavingsIncome          -> SavingsIncomePane(
             scope          = scope,

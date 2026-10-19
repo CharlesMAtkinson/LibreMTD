@@ -24,7 +24,23 @@ import javafx.scene.layout.*
 import org.charlesatkinson.libremtd.database.Property
 import org.charlesatkinson.libremtd.database.PropertyRepository
 import org.charlesatkinson.libremtd.database.PropertyType
+import org.charlesatkinson.libremtd.fileio.propertyDisplayString
 import org.charlesatkinson.libremtd.ui.components.UiPreferences
+
+/**
+ * The text shown for a property in the selector. It is the same text the
+ * spreadsheet export uses (see fileio.propertyDisplayString), so a property
+ * reads identically in the GUI and in a spreadsheet: the address as the user
+ * typed it, then the postcode (UK) or country code (foreign) with no comma
+ * before it, followed by "(ended)" where the letting has ended.
+ *
+ * A top-level function, not part of the class, so it can be unit tested
+ * without the JavaFX toolkit.
+ */
+fun propertySelectorLabel(property: Property): String {
+    val base = propertyDisplayString(property.address, property.postcode, property.countryCode)
+    return if (property.endedAt != null) "$base (ended)" else base
+}
 
 class PropertySelector(
     private val userId: Int,
@@ -82,7 +98,7 @@ class PropertySelector(
             endedHintLabel.isVisible = false
             endedHintLabel.isManaged = false
         } else {
-            endedHintLabel.text = "Ended ${endedAt.take(10)} — entries remain available for review and amendment."
+            endedHintLabel.text = "Ended ${endedAt.take(10)} \u2013 entries remain available for review and amendment."
             endedHintLabel.isVisible = true
             endedHintLabel.isManaged = true
         }
@@ -91,7 +107,7 @@ class PropertySelector(
     private fun loadProperties() {
         val properties = PropertyRepository.findByUser(userId)
             .let { all -> if (propertyType != null) all.filter { it.propertyType == propertyType } else all }
-            // Active properties first, then ended ones, each alphabetically —
+            // Active properties first, then ended ones, each alphabetically:
             // ended properties stay selectable for review rather than
             // disappearing, but shouldn't clutter the top of the list.
             .sortedWith(compareBy({ it.endedAt != null }, { it.address }))
@@ -109,10 +125,10 @@ class PropertySelector(
                 val lastId = prefs.lastPropertyId
                 val restored = if (lastId != null) properties.firstOrNull { it.id == lastId } else null
                 // Fall back to the first property (active-first, alphabetical
-                // — see the sort above) when there is no stored preference,
+                // - see the sort above) when there is no stored preference,
                 // or the stored one no longer exists (e.g. removed). Without
                 // this, a user with several properties of a type and no
-                // prior selection sees a blank picker and no data — in
+                // prior selection sees a blank picker and no data, and in
                 // particular no Final Declaration banner even when the
                 // relevant year is locked, since nothing is selected for the
                 // pane to check. Mirrors PeriodSelector/TaxYearSelector,
@@ -136,14 +152,7 @@ class PropertySelector(
                 style = ""
                 return
             }
-            val locationSuffix = when (item.propertyType) {
-                PropertyType.UK      -> item.postcode
-                PropertyType.FOREIGN -> item.countryCode
-            }
-            text = if (item.endedAt != null)
-                "${item.address}, $locationSuffix (ended)"
-            else
-                "${item.address}, $locationSuffix"
+            text = propertySelectorLabel(item)
             style = if (item.endedAt != null) "-fx-opacity: 0.6;" else ""
         }
     }

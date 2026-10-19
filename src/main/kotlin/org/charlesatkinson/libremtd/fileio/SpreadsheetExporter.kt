@@ -17,22 +17,20 @@
 
 package org.charlesatkinson.libremtd.fileio
 
-import org.apache.poi.ss.usermodel.*
+import org.apache.poi.ss.usermodel.DataValidation
+import org.apache.poi.ss.usermodel.FillPatternType
+import org.apache.poi.ss.usermodel.HorizontalAlignment
+import org.apache.poi.ss.usermodel.IndexedColors
 import org.apache.poi.ss.util.CellRangeAddressList
 import org.apache.poi.xssf.usermodel.XSSFCellStyle
+import org.apache.poi.xssf.usermodel.XSSFColor
 import org.apache.poi.xssf.usermodel.XSSFSheet
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
-import org.charlesatkinson.libremtd.database.tables.ExpensePropertyUkEntries
-import org.charlesatkinson.libremtd.database.tables.IncomeDividendEntries
-import org.charlesatkinson.libremtd.database.tables.IncomePropertyUkEntries
-import org.charlesatkinson.libremtd.database.tables.IncomeSavingsEntries
-import org.charlesatkinson.libremtd.database.taxYearDateRange
-import org.charlesatkinson.libremtd.ui.DividendCategory
-import org.charlesatkinson.libremtd.ui.ExpenseCategory
-import org.charlesatkinson.libremtd.ui.IncomeCategory
-import org.charlesatkinson.libremtd.ui.SavingsCategory
-import org.jetbrains.exposed.sql.*
-import org.jetbrains.exposed.sql.transactions.transaction
+import org.charlesatkinson.libremtd.database.PropertyRepository
+import org.charlesatkinson.libremtd.fileio.components.ColumnDef
+import org.charlesatkinson.libremtd.fileio.components.ColumnType
+import org.charlesatkinson.libremtd.fileio.components.ExportTable
+import org.charlesatkinson.libremtd.fileio.components.sheetSpecFor
 import java.io.FileOutputStream
 import java.nio.file.Path
 import java.time.LocalDate
@@ -40,249 +38,102 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
 // ---------------------------------------------------------------------------
-// Domain model
+// Sheet data
 // ---------------------------------------------------------------------------
 
-enum class ExportTable(val label: String, val fileName: String) {
-    INCOME_PROPERTY("Income (property)", "income_property"),
-    INCOME_DIVIDENDS("Income (dividends)", "income_dividends"),
-    EXPENSES("Expenses", "expenses"),
-    INCOME_SAVINGS("Income (savings)", "income_savings"),
-}
-
-/**
- * Describes one column in an exported sheet.
- *
- * [hidden] columns are written to the sheet so they survive a round-trip
- * import, but are hidden via POI's setColumnHidden API (Format > Columns >
- * Show in LibreOffice to reveal them).  The db-name header row always
- * contains the column name so the importer can find columns by name
- * regardless of whether hidden columns have been revealed.
- */
-data class ColumnDef(
-    val dbName: String,
-    val friendlyName: String,
-    val readOnly: Boolean = false,
-    val hidden: Boolean = false,
-    val dropdownValues: List<String>? = null,
-    val isDate: Boolean = false,
-)
-
-// ---------------------------------------------------------------------------
-// Property display helper
-// ---------------------------------------------------------------------------
-
-data class PropertyDisplay(
-    val id: Int,
-    val display: String,
+/** The columns and rows of one sheet, ready to write. */
+data class SheetData(
+    val columns: List<ColumnDef>,
+    val rows: List<Map<String, Any?>>,
 )
 
 /**
- * Converts property identifying details into a single-line display string
- * safe for use in a spreadsheet dropdown.
+ * The single-line text used to identify a property, both in the property
+ * selectors of the GUI and in the spreadsheet's property dropdown and cells.
+ * The importer matches spreadsheet cells against this same text.
  *
- * UK properties (postcode present) show their postcode. Foreign properties
- * (postcode == null) show their ISO 3166-1 Alpha-3 country code in
- * parentheses instead, if one is available.
+ * UK properties (postcode present) are "address postcode", following the UK
+ * convention of separating every element except the postcode with commas,
+ * so any commas belong to the address as the user typed it, for example
+ * "42 Imaginary Crescent, Madeup-on-Sea MS2 7UP". Foreign properties show
+ * their ISO 3166-1 Alpha-3 country code in parentheses instead, if one is
+ * available.
  *
- * Commas in the address are replaced with en-dashes so LibreOffice does not
- * wrap the dropdown entry at comma boundaries.
+ * The address is deliberately not altered. A comma inside a spreadsheet
+ * dropdown entry would split it, but the exporter handles that itself by
+ * putting such lists on a hidden helper sheet.
  */
 fun propertyDisplayString(address: String, postcode: String?, countryCode: String? = null): String {
-    val cleanAddress = address.replace(",", " \u2013")
+    val trimmed = address.trim()
     val suffix = when {
         !postcode.isNullOrBlank()    -> postcode
         !countryCode.isNullOrBlank() -> "($countryCode)"
         else                          -> null
     }
-    return if (suffix != null) "$cleanAddress $suffix" else cleanAddress
+    return if (suffix != null) "$trimmed $suffix" else trimmed
 }
 
-// ---------------------------------------------------------------------------
-// Column definitions
-//
-// Dropdown values use the human-readable [label] from each category enum.
-// The importer translates labels back to [dbKey] values before persisting.
-//
-// The id column is visible (not hidden) so users can see which record each
-// row corresponds to, and can use the id when deleting or editing rows.
-// property_id remains hidden — it is an internal key not useful to users.
-// ---------------------------------------------------------------------------
-
-private val EXPENSE_CATEGORIES         = ExpenseCategory.entries.map { it.label }
-private val DIVIDEND_INCOME_CATEGORIES = DividendCategory.entries.map { it.label }
-private val PROPERTY_INCOME_CATEGORIES = IncomeCategory.entries.map { it.label }
-private val SAVINGS_INCOME_CATEGORIES  = SavingsCategory.entries.map { it.label }
-
-private val EXPENSE_COLUMNS = listOf(
-    ColumnDef("id",               "ID",               readOnly = true, hidden = false),
-    ColumnDef("category",         "Category",         dropdownValues = EXPENSE_CATEGORIES),
-    ColumnDef("amount",           "Amount (£)"),
-    ColumnDef("description",      "Description"),
-    ColumnDef("transaction_date", "Transaction Date",  isDate = true),
-)
-
-private val INCOME_DIVIDEND_COLUMNS = listOf(
-    ColumnDef("id",               "ID",               readOnly = true, hidden = false),
-    ColumnDef("category",         "Category",         dropdownValues = DIVIDEND_INCOME_CATEGORIES),
-    ColumnDef("amount",           "Amount (£)"),
-    ColumnDef("description",      "Description"),
-    ColumnDef("transaction_date", "Transaction Date",  isDate = true),
-)
-
-private val INCOME_SAVINGS_COLUMNS = listOf(
-    ColumnDef("id",               "ID",               readOnly = true, hidden = false),
-    ColumnDef("category",         "Category",         dropdownValues = SAVINGS_INCOME_CATEGORIES),
-    ColumnDef("amount",           "Amount (£)"),
-    ColumnDef("description",      "Description"),
-    ColumnDef("transaction_date", "Transaction Date",  isDate = true),
-)
+/**
+ * Translates a [dbKey] stored in the database to the human-readable label
+ * shown in the spreadsheet. If the key is unknown the key itself is
+ * returned, so no data is lost.
+ */
+fun dbKeyToLabel(table: ExportTable, dbKey: String): String =
+    sheetSpecFor(table).categories.firstOrNull { it.dbKey == dbKey }?.label ?: dbKey
 
 /**
- * Income (property) columns depend on which properties exist.
- *
- * Layout:
- *   col 0  id               – read-only, visible
- *   col 1  property_id      – read-only, hidden
- *   col 2  property         – editable dropdown of address strings
- *   col 3  category         – editable dropdown (shows labels)
- *   col 4  amount           – editable numeric
- *   col 5  description      – editable text
- *   col 6  transaction_date – editable date
+ * Current rows for [table] and [taxYear], in export form: categories as
+ * labels, a "property" display string where the sheet has a property column,
+ * oldest transaction first. [filterPropertyId] is applied only to sheets
+ * which have a property column.
  */
-fun incomePropertyColumns(propertyDisplayStrings: List<String>): List<ColumnDef> = listOf(
-    ColumnDef("id",               "ID",               readOnly = true, hidden = false),
-    ColumnDef("property_id",      "Property ID",      readOnly = true, hidden = true),
-    ColumnDef("property",         "Property",         dropdownValues = propertyDisplayStrings),
-    ColumnDef("category",         "Category",         dropdownValues = PROPERTY_INCOME_CATEGORIES),
-    ColumnDef("amount",           "Amount (£)"),
-    ColumnDef("description",      "Description"),
-    ColumnDef("transaction_date", "Transaction Date",  isDate = true),
-)
-
-// ---------------------------------------------------------------------------
-// Category label ↔ dbKey helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Translates a [dbKey] stored in the database to the human-readable [label]
- * for display in the spreadsheet category column.  If the key is not found
- * the key itself is returned so no data is lost.
- */
-fun dbKeyToLabel(table: ExportTable, dbKey: String): String = when (table) {
-    ExportTable.EXPENSES         -> ExpenseCategory.entries.firstOrNull  { it.dbKey == dbKey }?.label ?: dbKey
-    ExportTable.INCOME_DIVIDENDS -> DividendCategory.entries.firstOrNull { it.dbKey == dbKey }?.label ?: dbKey
-    ExportTable.INCOME_PROPERTY  -> IncomeCategory.entries.firstOrNull   { it.dbKey == dbKey }?.label ?: dbKey
-    ExportTable.INCOME_SAVINGS   -> SavingsCategory.entries.firstOrNull  { it.dbKey == dbKey }?.label ?: dbKey
-}
-
-// ---------------------------------------------------------------------------
-// Row fetch helpers
-// ---------------------------------------------------------------------------
-
 fun fetchRows(
     table: ExportTable,
     userId: Int,
     taxYear: String,
     filterPropertyId: Int? = null,
     propertyDisplayMap: Map<Int, String> = emptyMap(),
-): List<Map<String, Any?>> = transaction {
+): List<Map<String, Any?>> {
+    val spec = sheetSpecFor(table)
+    val hasProperty = spec.propertyType != null
 
-    val (startDate, endDate) = taxYearDateRange(taxYear)
-
-    when (table) {
-
-        ExportTable.EXPENSES -> {
-            var query = ExpensePropertyUkEntries
-                .selectAll()
-                .where {
-                    (ExpensePropertyUkEntries.userId eq userId) and
-                            ExpensePropertyUkEntries.supersededAt.isNull() and
-                            (ExpensePropertyUkEntries.transactionDate greaterEq startDate) and
-                            (ExpensePropertyUkEntries.transactionDate lessEq endDate)
-                }
-            if (filterPropertyId != null)
-                query = query.andWhere { ExpensePropertyUkEntries.propertyId eq filterPropertyId }
-            query
-                .orderBy(ExpensePropertyUkEntries.transactionDate)
-                .map { row ->
-                    mapOf(
-                        "id"               to row[ExpensePropertyUkEntries.id],
-                        "category"         to dbKeyToLabel(ExportTable.EXPENSES, row[ExpensePropertyUkEntries.category]),
-                        "amount"           to row[ExpensePropertyUkEntries.amount],
-                        "description"      to row[ExpensePropertyUkEntries.description],
-                        "transaction_date" to row[ExpensePropertyUkEntries.transactionDate],
-                    )
-                }
+    return spec.currentRows(userId, taxYear)
+        .filter { !hasProperty || filterPropertyId == null || it["property_id"] == filterPropertyId }
+        .sortedWith(
+            compareBy<Map<String, Any?>>(
+                { it["transaction_date"] as? String ?: "" },
+                { (it["id"] as Number).toInt() },
+            )
+        )
+        .map { row ->
+            val out = row.toMutableMap()
+            out["category"] = dbKeyToLabel(table, row["category"] as String)
+            if (hasProperty) out["property"] = propertyDisplayMap[row["property_id"]] ?: ""
+            out
         }
+}
 
-        ExportTable.INCOME_DIVIDENDS -> {
-            IncomeDividendEntries
-                .selectAll()
-                .where {
-                    (IncomeDividendEntries.userId eq userId) and
-                            (IncomeDividendEntries.taxYear eq taxYear) and
-                            IncomeDividendEntries.supersededAt.isNull()
-                }
-                .orderBy(IncomeDividendEntries.transactionDate)
-                .map { row ->
-                    mapOf(
-                        "id"               to row[IncomeDividendEntries.id],
-                        "category"         to dbKeyToLabel(ExportTable.INCOME_DIVIDENDS, row[IncomeDividendEntries.category]),
-                        "amount"           to row[IncomeDividendEntries.amount],
-                        "description"      to row[IncomeDividendEntries.description],
-                        "transaction_date" to row[IncomeDividendEntries.transactionDate],
-                    )
-                }
-        }
+/**
+ * Loads everything needed to write one sheet: the columns (with a property
+ * dropdown limited to properties of the type the sheet accepts) and the
+ * current rows.
+ */
+fun sheetDataFor(
+    table: ExportTable,
+    userId: Int,
+    taxYear: String,
+    filterPropertyId: Int? = null,
+): SheetData {
+    val spec = sheetSpecFor(table)
+    val propertyType = spec.propertyType
+    val displayMap: Map<Int, String> =
+        if (propertyType == null) emptyMap()
+        else PropertyRepository.findByUser(userId)
+            .filter { it.propertyType == propertyType }
+            .associate { it.id to propertyDisplayString(it.address, it.postcode, it.countryCode) }
 
-        ExportTable.INCOME_PROPERTY -> {
-            var query = IncomePropertyUkEntries
-                .selectAll()
-                .where {
-                    (IncomePropertyUkEntries.userId eq userId) and
-                            IncomePropertyUkEntries.supersededAt.isNull() and
-                            (IncomePropertyUkEntries.transactionDate greaterEq startDate) and
-                            (IncomePropertyUkEntries.transactionDate lessEq endDate)
-                }
-            if (filterPropertyId != null)
-                query = query.andWhere { IncomePropertyUkEntries.propertyId eq filterPropertyId }
-            query
-                .orderBy(IncomePropertyUkEntries.transactionDate)
-                .map { row ->
-                    val pid = row[IncomePropertyUkEntries.propertyId]
-                    mapOf(
-                        "id"               to row[IncomePropertyUkEntries.id],
-                        "property_id"      to pid,
-                        "property"         to (propertyDisplayMap[pid] ?: ""),
-                        "category"         to dbKeyToLabel(ExportTable.INCOME_PROPERTY, row[IncomePropertyUkEntries.category]),
-                        "amount"           to row[IncomePropertyUkEntries.amount],
-                        "description"      to row[IncomePropertyUkEntries.description],
-                        "transaction_date" to row[IncomePropertyUkEntries.transactionDate],
-                    )
-                }
-        }
-
-        ExportTable.INCOME_SAVINGS -> {
-            IncomeSavingsEntries
-                .selectAll()
-                .where {
-                    (IncomeSavingsEntries.userId eq userId) and
-                            (IncomeSavingsEntries.taxYear eq taxYear) and
-                            IncomeSavingsEntries.supersededAt.isNull()
-                }
-                .orderBy(IncomeSavingsEntries.transactionDate)
-                .map { row ->
-                    mapOf(
-                        "id"               to row[IncomeSavingsEntries.id],
-                        "category"         to dbKeyToLabel(ExportTable.INCOME_SAVINGS, row[IncomeSavingsEntries.category]),
-                        "amount"           to row[IncomeSavingsEntries.amount],
-                        "description"      to row[IncomeSavingsEntries.description],
-                        "transaction_date" to row[IncomeSavingsEntries.transactionDate],
-                    )
-                }
-        }
-    }
+    val columns = spec.columns(displayMap.values.distinct().sorted())
+    return SheetData(columns, fetchRows(table, userId, taxYear, filterPropertyId, displayMap))
 }
 
 // ---------------------------------------------------------------------------
@@ -293,31 +144,42 @@ object SpreadsheetExporter {
 
     private val TIMESTAMP_FMT = DateTimeFormatter.ofPattern("yyyy.MM.dd-HH.mm")
 
+    /**
+     * The green LibreMTD uses as its accent in the green theme (#00703c),
+     * used for the headers of editable columns. White bold text on it
+     * has a contrast ratio of about 6.2:1.
+     */
+    private val LIBREMTD_GREEN_RGB = byteArrayOf(0x00, 0x70, 0x3c)
+
     // ------------------------------------------------------------------
     // Public API
     // ------------------------------------------------------------------
 
-    fun exportSingle(
-        table: ExportTable,
-        cols: List<ColumnDef>,
-        rows: List<Map<String, Any?>>,
+    /** Writes one sheet per entry in [tables] to [outputPath]. */
+    fun exportTables(
+        tables: List<ExportTable>,
+        userId: Int,
+        taxYear: String,
+        filterPropertyId: Int?,
         outputPath: Path,
     ) {
-        val wb = XSSFWorkbook()
-        addSheet(wb, table, cols, rows)
-        writeWorkbook(wb, outputPath)
+        val data = tables.associateWith { sheetDataFor(it, userId, taxYear, filterPropertyId) }
+        buildWorkbook(data).use { wb ->
+            FileOutputStream(outputPath.toFile()).use { wb.write(it) }
+        }
     }
 
-    fun exportAll(
-        entries: Map<ExportTable, Pair<List<ColumnDef>, List<Map<String, Any?>>>>,
-        outputPath: Path,
-    ) {
-        val wb = XSSFWorkbook()
-        for (table in ExportTable.entries) {
-            val (cols, rows) = entries[table] ?: (staticColumnsFor(table) to emptyList())
-            addSheet(wb, table, cols, rows)
+    /**
+     * Builds the workbook in memory, one sheet per entry, in map order.
+     * Separate from writing to disk so tests can inspect it directly.
+     */
+    fun buildWorkbook(entries: Map<ExportTable, SheetData>): XSSFWorkbook {
+        val wb     = XSSFWorkbook()
+        val styles = Styles(wb)
+        for ((table, data) in entries) {
+            addSheet(wb, styles, table, data.columns, data.rows)
         }
-        writeWorkbook(wb, outputPath)
+        return wb
     }
 
     fun suggestedFileName(table: ExportTable, qualifier: String): String {
@@ -330,27 +192,20 @@ object SpreadsheetExporter {
         return "all_tables_at_$ts.xlsx"
     }
 
-    fun staticColumnsFor(table: ExportTable): List<ColumnDef> = when (table) {
-        ExportTable.EXPENSES         -> EXPENSE_COLUMNS
-        ExportTable.INCOME_DIVIDENDS -> INCOME_DIVIDEND_COLUMNS
-        ExportTable.INCOME_PROPERTY  -> incomePropertyColumns(emptyList())
-        ExportTable.INCOME_SAVINGS   -> INCOME_SAVINGS_COLUMNS
-    }
-
     // ------------------------------------------------------------------
     // Sheet builder
     // ------------------------------------------------------------------
 
     private fun addSheet(
         wb: XSSFWorkbook,
+        styles: Styles,
         table: ExportTable,
         cols: List<ColumnDef>,
         rows: List<Map<String, Any?>>,
     ) {
-        val sheet  = wb.createSheet(table.label)
-        val styles = Styles(wb)
+        val sheet = wb.createSheet(table.label)
 
-        // ── Row 0: friendly labels (visible) ───────────────────────────
+        // Row 0: friendly labels (visible)
         val friendlyRow = sheet.createRow(0)
         cols.forEachIndexed { ci, col ->
             val cell = friendlyRow.createCell(ci)
@@ -359,9 +214,7 @@ object SpreadsheetExporter {
             else styles.headerEditable
         }
 
-        // ── Row 1: db column names (hidden — used by importer only) ────
-        // The row is written so the importer can locate columns by their
-        // database name.  zeroHeight hides it from the user in LibreOffice.
+        // Row 1: db column names (zero height; used by the importer only)
         val dbRow = sheet.createRow(1)
         cols.forEachIndexed { ci, col ->
             val cell = dbRow.createCell(ci)
@@ -370,7 +223,7 @@ object SpreadsheetExporter {
         }
         dbRow.zeroHeight = true
 
-        // ── Data rows ──────────────────────────────────────────────────
+        // Data rows
         rows.forEachIndexed { ri, rowData ->
             val sheetRow = sheet.createRow(ri + 2)
             cols.forEachIndexed { ci, col ->
@@ -378,20 +231,24 @@ object SpreadsheetExporter {
                 val value = rowData[col.dbName]
                 when {
                     col.readOnly || col.hidden -> {
-                        if (value != null) cell.setCellValue((value as Number).toDouble())
+                        if (value is Number) cell.setCellValue(value.toDouble())
                         cell.cellStyle = styles.lockedGrey
                     }
-                    col.isDate -> {
+                    col.type == ColumnType.DATE -> {
                         val dateStr = value?.toString()
                         if (!dateStr.isNullOrBlank()) {
-                            runCatching { LocalDate.parse(dateStr) }.getOrNull()?.let { ld ->
-                                cell.setCellValue(ld)
-                            } ?: cell.setCellValue(dateStr)
+                            val parsed = runCatching { LocalDate.parse(dateStr) }.getOrNull()
+                            if (parsed != null) cell.setCellValue(parsed) else cell.setCellValue(dateStr)
                         }
                         cell.cellStyle = styles.dateCell
                     }
-                    value is Number -> {
-                        cell.setCellValue(value.toDouble())
+                    col.type == ColumnType.BOOLEAN -> {
+                        cell.setCellValue(if (value == true) "Yes" else "No")
+                        cell.cellStyle = styles.editable
+                    }
+                    col.type == ColumnType.MONEY -> {
+                        // A null (an optional amount not entered) leaves the cell blank.
+                        if (value is Number) cell.setCellValue(value.toDouble())
                         cell.cellStyle = styles.numeric
                     }
                     else -> {
@@ -402,104 +259,86 @@ object SpreadsheetExporter {
             }
         }
 
-        // ── Data validation dropdowns ───────────────────────────────────
+        // Dropdowns
+        val lastDropdownRow = maxOf(1000, rows.size + 502)
         cols.forEachIndexed { ci, col ->
-            if (!col.dropdownValues.isNullOrEmpty() && !col.hidden) {
-                addDropdown(sheet, ci, col.dropdownValues)
+            val values = col.dropdownValues
+            if (!values.isNullOrEmpty() && !col.hidden) {
+                addDropdown(sheet, ci, values, lastDropdownRow)
             }
         }
 
-        // ── Column widths and hidden state ─────────────────────────────
+        // Column widths, hidden state, and a default style for every column
+        // so that rows the user adds below the data behave like the
+        // exported ones under sheet protection: unlocked for editable
+        // columns, locked and grey for read-only and hidden ones (so the ID
+        // cell of a new row cannot be typed into). One shared style per
+        // column type: no per-cell styles.
         cols.forEachIndexed { ci, col ->
+            sheet.setColumnWidth(ci, widthFor(col) * 256)
             if (col.hidden) {
-                sheet.setColumnWidth(ci, when (col.dbName) {
-                    "property_id" -> 14 * 256
-                    else          -> 20 * 256
-                })
                 sheet.setColumnHidden(ci, true)
+                sheet.setDefaultColumnStyle(ci, styles.lockedGrey)
+            } else if (col.readOnly) {
+                sheet.setDefaultColumnStyle(ci, styles.lockedGrey)
             } else {
-                sheet.setColumnWidth(ci, when (col.dbName) {
-                    "id"               ->  6 * 256
-                    "amount"           -> 14 * 256
-                    "transaction_date" -> 16 * 256
-                    "category"         -> 32 * 256
-                    "property"         -> 40 * 256
-                    "description"      -> 48 * 256
-                    else               -> 20 * 256
-                })
+                sheet.setDefaultColumnStyle(ci, styles.forType(col.type))
             }
         }
 
-        // ── Freeze top header row ──────────────────────────────────────
-        // Freeze rows 0 and 1 so the friendly header stays visible while
-        // scrolling.  Row 1 (db names) is zero-height so effectively invisible.
+        // Freeze the two header rows (row 1 has zero height).
         sheet.createFreezePane(0, 2)
 
-        // ── Unlock editable columns ────────────────────────────────────
-        cols.forEachIndexed { ci, col ->
-            if (!col.readOnly && !col.hidden) {
-                val defaultStyle = (wb.createCellStyle() as XSSFCellStyle).apply {
-                    locked = false
-                    when (col.dbName) {
-                        "amount" ->
-                            dataFormat = wb.creationHelper
-                                .createDataFormat().getFormat("#,##0.00")
-                        "transaction_date" -> {
-                            dataFormat = wb.creationHelper
-                                .createDataFormat().getFormat("yyyy-mm-dd")
-                            alignment  = HorizontalAlignment.CENTER
-                        }
-                    }
-                }
-                sheet.setDefaultColumnStyle(ci, defaultStyle)
-
-                for (ri in 2..sheet.lastRowNum) {
-                    val cell = sheet.getRow(ri)?.getCell(ci) ?: continue
-                    cell.cellStyle = (wb.createCellStyle() as XSSFCellStyle).apply {
-                        locked = false
-                        when (col.dbName) {
-                            "amount" ->
-                                dataFormat = wb.creationHelper
-                                    .createDataFormat().getFormat("#,##0.00")
-                            "transaction_date" -> {
-                                dataFormat = wb.creationHelper
-                                    .createDataFormat().getFormat("yyyy-mm-dd")
-                                alignment  = HorizontalAlignment.CENTER
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // ── Sheet protection ───────────────────────────────────────────
         sheet.protectSheet("")
+    }
+
+    private fun widthFor(col: ColumnDef): Int = when {
+        col.hidden         -> 14
+        col.dbName == "id" -> 6
+        else -> when (col.type) {
+            ColumnType.MONEY        -> 20
+            ColumnType.DATE         -> 16
+            ColumnType.CATEGORY     -> 32
+            ColumnType.PROPERTY     -> 48
+            ColumnType.TEXT         -> 48
+            ColumnType.INTEGER      -> 12
+            ColumnType.BOOLEAN      -> 10
+            ColumnType.COUNTRY_CODE -> 10
+        }
     }
 
     // ------------------------------------------------------------------
     // Dropdown helper
     // ------------------------------------------------------------------
 
-    private fun addDropdown(sheet: XSSFSheet, colIndex: Int, values: List<String>) {
+    /**
+     * Adds a dropdown to column [colIndex].
+     *
+     * A short list with no commas in it is stored inline. An inline list is
+     * saved as one comma-separated string, so Excel and LibreOffice would
+     * split any entry containing a comma (such as "42 Imaginary Crescent,
+     * Madeup-on-Sea MS2 7UP") into two, and Excel also limits the string to
+     * 255 characters. Any other list goes on a hidden helper sheet instead.
+     * The helper sheet's name is numbered rather than derived from the main
+     * sheet's name, because sheet names are limited to 31 characters and a
+     * truncated derived name could collide with another column's.
+     */
+    private fun addDropdown(sheet: XSSFSheet, colIndex: Int, values: List<String>, lastRow: Int) {
         val wb          = sheet.workbook
         val dvHelper    = sheet.dataValidationHelper
-        val addressList = CellRangeAddressList(2, 1000, colIndex, colIndex)
+        val addressList = CellRangeAddressList(2, lastRow, colIndex, colIndex)
 
-        val constraint = if (values.joinToString(",").length <= 255) {
+        val needsHelperSheet = values.any { ',' in it } || values.joinToString(",").length > 255
+        val constraint = if (!needsHelperSheet) {
             dvHelper.createExplicitListConstraint(values.toTypedArray())
         } else {
-            val refSheetName = "_dv_${sheet.sheetName}_c$colIndex"
-                .replace(" ", "_")
-                .take(31)
-            val refSheet = wb.getSheet(refSheetName)
-                ?: wb.createSheet(refSheetName).also { rs ->
-                    wb.setSheetHidden(wb.getSheetIndex(rs), true)
-                    values.forEachIndexed { i, v ->
-                        rs.createRow(i).createCell(0).setCellValue(v)
-                    }
-                }
-            val lastRow = refSheet.lastRowNum + 1
-            dvHelper.createFormulaListConstraint("'$refSheetName'!\$A\$1:\$A\$$lastRow")
+            val refSheetName = "_dv_${wb.numberOfSheets}"
+            val refSheet = wb.createSheet(refSheetName)
+            wb.setSheetHidden(wb.getSheetIndex(refSheet), true)
+            values.forEachIndexed { i, v ->
+                refSheet.createRow(i).createCell(0).setCellValue(v)
+            }
+            dvHelper.createFormulaListConstraint("'$refSheetName'!\$A\$1:\$A\$${values.size}")
         }
 
         val dv = dvHelper.createValidation(constraint, addressList)
@@ -510,26 +349,22 @@ object SpreadsheetExporter {
     }
 
     // ------------------------------------------------------------------
-    // Write to disk
-    // ------------------------------------------------------------------
-
-    private fun writeWorkbook(wb: XSSFWorkbook, path: Path) {
-        FileOutputStream(path.toFile()).use { wb.write(it) }
-        wb.close()
-    }
-
-    // ------------------------------------------------------------------
-    // Cell styles
+    // Cell styles (created once per workbook)
+    //
+    // Each style sets applyProtection explicitly. POI writes the locked or
+    // unlocked setting but not that flag, and an application is entitled to
+    // ignore a style's protection settings when it is absent.
     // ------------------------------------------------------------------
 
     private class Styles(wb: XSSFWorkbook) {
         private val cf = wb.creationHelper
 
         val headerEditable: XSSFCellStyle = (wb.createCellStyle() as XSSFCellStyle).apply {
-            fillForegroundColor = IndexedColors.CORNFLOWER_BLUE.index
+            setFillForegroundColor(XSSFColor(LIBREMTD_GREEN_RGB, null))
             fillPattern         = FillPatternType.SOLID_FOREGROUND
             setFont(wb.createFont().also { it.bold = true; it.color = IndexedColors.WHITE.index })
             locked = true
+            coreXf.applyProtection = true
         }
 
         val headerReadOnly: XSSFCellStyle = (wb.createCellStyle() as XSSFCellStyle).apply {
@@ -537,27 +372,38 @@ object SpreadsheetExporter {
             fillPattern         = FillPatternType.SOLID_FOREGROUND
             setFont(wb.createFont().also { it.bold = true; it.color = IndexedColors.WHITE.index })
             locked = true
+            coreXf.applyProtection = true
         }
 
         val lockedGrey: XSSFCellStyle = (wb.createCellStyle() as XSSFCellStyle).apply {
             fillForegroundColor = IndexedColors.GREY_25_PERCENT.index
             fillPattern         = FillPatternType.SOLID_FOREGROUND
             locked              = true
+            coreXf.applyProtection = true
         }
 
         val editable: XSSFCellStyle = (wb.createCellStyle() as XSSFCellStyle).apply {
             locked = false
+            coreXf.applyProtection = true
         }
 
         val numeric: XSSFCellStyle = (wb.createCellStyle() as XSSFCellStyle).apply {
             locked     = false
             dataFormat = cf.createDataFormat().getFormat("#,##0.00")
+            coreXf.applyProtection = true
         }
 
         val dateCell: XSSFCellStyle = (wb.createCellStyle() as XSSFCellStyle).apply {
             locked     = false
             dataFormat = cf.createDataFormat().getFormat("yyyy-mm-dd")
             alignment  = HorizontalAlignment.CENTER
+            coreXf.applyProtection = true
+        }
+
+        fun forType(type: ColumnType): XSSFCellStyle = when (type) {
+            ColumnType.MONEY -> numeric
+            ColumnType.DATE  -> dateCell
+            else             -> editable
         }
     }
 }

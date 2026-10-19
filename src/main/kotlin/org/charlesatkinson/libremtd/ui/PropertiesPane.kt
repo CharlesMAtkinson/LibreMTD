@@ -88,11 +88,20 @@ private data class ForeignEditDetails(
     val address: String,
 )
 
+/**
+ * @param onPropertiesChanged Called on the JavaFX thread after every reload
+ *                            which follows a change to a property (add, edit,
+ *                            end, remove, register with HMRC, FTCR), so the
+ *                            host can discard cached panes which read the
+ *                            property list only when built. Not called by the
+ *                            reload this pane does when first built.
+ */
 class PropertiesPane(
     private val scope: CoroutineScope,
     private val userId: Int,
     private val settingsRepository: SettingsRepository,
     private val onStatusChange: (String) -> Unit,
+    private val onPropertiesChanged: () -> Unit = {},
 ) {
 
     val root: VBox
@@ -133,7 +142,8 @@ class PropertiesPane(
 
     init {
         root = buildUI()
-        loadProperties()
+        // The pane has only just been built, so nothing has changed yet.
+        loadProperties(notifyChanged = false)
     }
 
     private fun buildUI(): VBox {
@@ -327,6 +337,7 @@ class PropertiesPane(
                         ukProperties.add(property)
                         clearForm()
                         onStatusChange("Property added ✓")
+                        onPropertiesChanged()
                     }
                 }
             }
@@ -1360,7 +1371,13 @@ class PropertiesPane(
 
     // ── Load / clear ────────────────────────────────────────────────────
 
-    private fun loadProperties() {
+    /**
+     * Reloads both property tables. [notifyChanged] is true for every reload
+     * which follows a change, so [onPropertiesChanged] can tell the host to
+     * discard its stale cached panes; the one reload done when the pane is
+     * first built passes false.
+     */
+    private fun loadProperties(notifyChanged: Boolean = true) {
         scope.launch(Dispatchers.IO) {
             val loaded = PropertyRepository.findByUser(userId)
             val foreign = loaded.filter { it.propertyType == PropertyType.FOREIGN }
@@ -1378,6 +1395,7 @@ class PropertiesPane(
                 ftcrSummaries.clear()
                 ftcrSummaries.putAll(summaries)
                 onStatusChange("${loaded.size} property/properties loaded")
+                if (notifyChanged) onPropertiesChanged()
             }
         }
     }

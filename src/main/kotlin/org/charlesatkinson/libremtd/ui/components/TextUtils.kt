@@ -30,8 +30,26 @@ normalizeText(
     ut aliquip ex ea commodo consequat.
   """
 )*/
+
+/**
+ * Joins the lines of [raw] into running text and turns each {NL} marker
+ * into a line break. One space on either side of a marker is removed with
+ * it, so a break never leaves a trailing or leading space behind.
+ */
 fun normalizeText(raw: String): String =
     raw.trimIndent()
         .lines()
         .joinToString(" ") { it.trim() }
-        .replace(Regex("""\{NL} ?"""), "\n")
+        .replace(Regex(""" ?\{NL} ?"""), "\n")
+
+private val SMALL_NUMBER_WORDS =
+    listOf("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine")
+
+/**
+ * Writes a count in running UI text following the project convention: a
+ * word for 0 to 9, digits for 10 and above (and for negative numbers), so
+ * "one file, six sheets" but "one file, 12 sheets". Not for statistics or
+ * figures such as "1 inserted", where digits are clearer.
+ */
+fun countInWords(n: Int): String =
+    if (n in SMALL_NUMBER_WORDS.indices) SMALL_NUMBER_WORDS[n] else n.toString()
