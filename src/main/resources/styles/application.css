@@ -20,18 +20,21 @@
     -fx-font-size: 14px;
 }
 
+/* Every button has the same transparent border so that outlined buttons
+   (which paint a coloured border) are exactly the same size as filled ones.
+   Disabled appearance is set in the theme files, where colour carries the
+   meaning, so there is deliberately no opacity rule for :disabled here. */
 .button {
     -fx-padding: 10px 20px;
     -fx-background-radius: 5px;
+    -fx-border-color: transparent;
+    -fx-border-width: 1.5px;
+    -fx-border-radius: 5px;
     -fx-cursor: hand;
 }
 
 .button:hover {
     -fx-opacity: 0.9;
-}
-
-.button:disabled {
-    -fx-opacity: 0.5;
 }
 
 .menu-bar .menu .label {

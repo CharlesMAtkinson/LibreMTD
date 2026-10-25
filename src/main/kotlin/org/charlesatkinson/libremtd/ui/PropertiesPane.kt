@@ -17,6 +17,9 @@
 
 package org.charlesatkinson.libremtd.ui
 
+import javafx.beans.binding.Bindings
+import javafx.beans.property.SimpleBooleanProperty
+import javafx.beans.value.ObservableBooleanValue
 import javafx.event.ActionEvent
 import javafx.geometry.Insets
 import javafx.geometry.Pos
@@ -67,23 +70,46 @@ private const val FTCR_EXPLANATION =
             "on this property's income against your UK tax on the same income, so you're not " +
             "taxed twice on it. Whether claiming FTCR is the right choice for you, and how much " +
             "relief you'd be entitled to, depends on the tax you paid abroad and any double " +
-            "taxation agreement between the UK and the property's country — there's no simple " +
+            "taxation agreement between the UK and the property's country – there's no simple " +
             "yes/no default answer. See HMRC's helpsheet HS263 to work it out.\n\n" +
-            "You can change this at any time before your Final Declaration for the tax year — " +
+            "You can change this at any time before your Final Declaration for the tax year – " +
             "each quarterly submission replaces the previous one, so an earlier choice isn't locked in."
+
+private const val END_LETTING_EXPLANATION =
+    "End letting is available for a property which is still being let. It marks the property " +
+            "as ended. Its income and expense entries are kept, and can still be reviewed and " +
+            "amended until your Final Declaration. For a foreign property registered with HMRC, " +
+            "HMRC is told as well."
+
+private const val DELETE_EXPLANATION =
+    "Delete is available only for a property with no income or expense entries, including " +
+            "entries which were later edited or deleted. It removes the property completely and " +
+            "cannot be undone. To stop letting a property which does have entries, use End letting."
+
+/** True if [property] is still being let, so its letting can be ended. */
+internal fun canEndLetting(property: Property): Boolean = property.endedAt == null
+
+/**
+ * True if [property] is a foreign property which is still being let but has
+ * not yet been registered with HMRC.
+ */
+internal fun canRegisterWithHmrc(property: Property): Boolean =
+    property.propertyType == PropertyType.FOREIGN &&
+            property.hmrcPropertyId == null &&
+            property.endedAt == null
 
 private data class ForeignPropertyEndDetails(
     val endDate: String,
     val endReason: ForeignPropertyEndReason,
 )
 
-/** Result of the "Edit property" dialogue for UK properties — see [PropertiesPane.promptForUkEdit]. */
+/** Result of the "Edit property" dialogue for UK properties – see [PropertiesPane.promptForUkEdit]. */
 private data class UkEditDetails(
     val address: String,
     val postcode: String,
 )
 
-/** Result of the "Edit property" dialogue for foreign properties — see [PropertiesPane.promptForForeignEdit]. */
+/** Result of the "Edit property" dialogue for foreign properties – see [PropertiesPane.promptForForeignEdit]. */
 private data class ForeignEditDetails(
     val address: String,
 )
@@ -91,7 +117,7 @@ private data class ForeignEditDetails(
 /**
  * @param onPropertiesChanged Called on the JavaFX thread after every reload
  *                            which follows a change to a property (add, edit,
- *                            end, remove, register with HMRC, FTCR), so the
+ *                            end, delete, register with HMRC, FTCR), so the
  *                            host can discard cached panes which read the
  *                            property list only when built. Not called by the
  *                            reload this pane does when first built.
@@ -137,8 +163,11 @@ class PropertiesPane(
     private lateinit var countryRow: HBox
     private lateinit var ftcrRow: HBox
     private lateinit var addBtn: Button
-    private lateinit var registerHmrcBtn: Button
-    private lateinit var ftcrBtn: Button
+
+    // True while a registration with HMRC is in flight. Part of the
+    // Register with HMRC button's disabled binding, which cannot be set
+    // directly.
+    private val registering = SimpleBooleanProperty(false)
 
     init {
         root = buildUI()
@@ -187,7 +216,7 @@ class PropertiesPane(
 
         foreignHintLabel = hintLabel("")
 
-        // TaxYearSelector renders its own "Tax year:" label internally — do
+        // TaxYearSelector renders its own "Tax year:" label internally – do
         // not wrap it in a second one (see SubmissionsPane for the same
         // usage pattern).
         taxYearSelector = TaxYearSelector(userId = userId) { year ->
@@ -232,7 +261,7 @@ class PropertiesPane(
 
         // ukRadio is already selected by the time this method runs (see its
         // field initialiser above), which happened before the listener just
-        // above existed — so without this call, the fields hidden a few
+        // above existed – so without this call, the fields hidden a few
         // lines up would never be revealed until the user actively changed
         // the toggle. This syncs the visible state to the actual initial
         // selection, the same way any later click does.
@@ -293,7 +322,7 @@ class PropertiesPane(
     }
 
     /**
-     * Every LibreMTD-supported tax year (2026-27 onwards — see
+     * Every LibreMTD-supported tax year (2026-27 onwards – see
      * database.availableTaxYears) requires HMRC registration for a new
      * foreign property, so this hint no longer needs to branch on the
      * selected year; it's kept as a hint (rather than removed) because it's
@@ -361,7 +390,7 @@ class PropertiesPane(
 
     /** HMRC issues a UUID propertyID for every foreign property in every
      *  LibreMTD-supported tax year, so a live connection and business ID
-     *  are always required to add one — there is no local-only path. */
+     *  are always required to add one – there is no local-only path. */
     private fun addForeignPropertyViaHmrc(address: String, country: String, taxYear: String, ftcr: Boolean) {
         addBtn.isDisable = true
         scope.launch(Dispatchers.IO) {
@@ -424,11 +453,11 @@ class PropertiesPane(
     /**
      * Opens an "Edit property" dialogue pre-filled with [selected]'s current
      * address and postcode, validates the input the same way as the "Add
-     * property" form, and — if the user confirms — persists the change via
+     * property" form, and – if the user confirms – persists the change via
      * [PropertyRepository.updateUk].
      *
      * This is a plain in-place correction: no confirmation-of-intent dialog
-     * beyond the edit form itself, no tax-year lock, and no HMRC call —
+     * beyond the edit form itself, no tax-year lock, and no HMRC call –
      * see PropertyRepository.updateUk's doc comment for why that is correct
      * for UK properties specifically.
      */
@@ -504,17 +533,17 @@ class PropertiesPane(
      * Foreign property renaming, in two branches:
      *
      * - Not registered with HMRC (hmrcPropertyId == null): under LibreMTD's
-     *   normal Add Property flow this cannot happen any more — every
+     *   normal Add Property flow this cannot happen any more – every
      *   foreign property is now registered with HMRC at creation time (see
      *   addForeignPropertyViaHmrc). This branch only matters for a property
      *   that reached the database some other way, e.g. a direct sqlite3
-     *   edit or a future import feature — in that case this is a plain
+     *   edit or a future import feature – in that case this is a plain
      *   local correction exactly like [handleEditUk].
      * - Registered with HMRC: the address WAS sent to HMRC at registration,
      *   so HMRC's own Update Foreign Property Details endpoint must be
      *   called first (see ForeignPropertyClient.rename()). The local record
      *   is only updated once HMRC confirms the change, so LibreMTD and HMRC
-     *   never disagree about the address — the same "HMRC first, then
+     *   never disagree about the address – the same "HMRC first, then
      *   local" pattern as [handleEndRegisteredForeignProperty].
      *
      * Country code is never offered for editing here: HMRC's Update Foreign
@@ -539,7 +568,7 @@ class PropertiesPane(
         if (taxYear.isNullOrBlank()) {
             Dialogs.showError(
                 "This property has an HMRC property ID but no recorded registration tax year " +
-                        "— likely registered before this tracking was added. It can't be safely " +
+                        "– likely registered before this tracking was added. It can't be safely " +
                         "renamed with HMRC automatically. Please check its record on HMRC directly, " +
                         "or if you know the tax year it was registered under, that can be backfilled " +
                         "in the database.",
@@ -585,7 +614,7 @@ class PropertiesPane(
                     withContext(Dispatchers.JavaFx) {
                         Dialogs.showError(
                             "Could not rename the property with HMRC, so the local address has " +
-                                    "not been changed either — this keeps LibreMTD and HMRC in sync.\n\n" +
+                                    "not been changed either – this keeps LibreMTD and HMRC in sync.\n\n" +
                                     result.message,
                             title = "HMRC update failed",
                         )
@@ -640,23 +669,23 @@ class PropertiesPane(
     /**
      * Registers a foreign property that exists locally without an HMRC
      * propertyId. Under LibreMTD's normal Add Property flow this button
-     * should never be needed — every new foreign property is registered at
-     * creation time (see addForeignPropertyViaHmrc) — but it's kept as a
+     * should never be needed – every new foreign property is registered at
+     * creation time (see addForeignPropertyViaHmrc) – but it's kept as a
      * recovery path for a property that reached the database some other
      * way, e.g. a direct sqlite3 edit or a future import feature.
      */
     private fun handleRegisterWithHmrc(selected: Property) {
-        registerHmrcBtn.isDisable = true
+        registering.set(true)
         scope.launch(Dispatchers.IO) {
             val settings = requireConnectedSettingsOrShowError()
             if (settings == null) {
-                withContext(Dispatchers.JavaFx) { registerHmrcBtn.isDisable = false }
+                withContext(Dispatchers.JavaFx) { registering.set(false) }
                 return@launch
             }
 
             val taxYear = withContext(Dispatchers.JavaFx) { promptForRegistrationTaxYear() }
             if (taxYear == null) {
-                withContext(Dispatchers.JavaFx) { registerHmrcBtn.isDisable = false }
+                withContext(Dispatchers.JavaFx) { registering.set(false) }
                 return@launch
             }
 
@@ -687,14 +716,14 @@ class PropertiesPane(
                 is ApiResult.Success -> {
                     PropertyRepository.registerWithHmrc(selected.id, result.data, taxYear)
                     withContext(Dispatchers.JavaFx) {
-                        registerHmrcBtn.isDisable = false
+                        registering.set(false)
                         loadProperties()
                         onStatusChange("Property registered with HMRC ✓")
                     }
                 }
                 is ApiResult.Failure -> {
                     withContext(Dispatchers.JavaFx) {
-                        registerHmrcBtn.isDisable = false
+                        registering.set(false)
                         Dialogs.showError(result.message)
                     }
                 }
@@ -774,7 +803,7 @@ class PropertiesPane(
         val years = openTaxYearsFor(selected)
         if (years.isEmpty()) {
             Dialogs.showError(
-                "There are no open tax years for this property — either none are recorded yet, " +
+                "There are no open tax years for this property – either none are recorded yet, " +
                         "or every year this property applies to has already had a Final Declaration made.",
                 title = "No open tax years",
             )
@@ -817,7 +846,7 @@ class PropertiesPane(
                             val how = if (e.rolledForwardFromTaxYear != null)
                                 "carried forward from ${e.rolledForwardFromTaxYear}"
                             else "set by you"
-                            append("${e.recordedAt.take(19)} — $value ($how)\n")
+                            append("${e.recordedAt.take(19)} – $value ($how)\n")
                         }
                     }
                 }
@@ -827,7 +856,7 @@ class PropertiesPane(
         }
 
         val dialog = Dialog<Boolean>().apply {
-            title = "Foreign Tax Credit Relief — ${selected.address}"
+            title = "Foreign Tax Credit Relief – ${selected.address}"
             headerText = null
             dialogPane.content = VBox(10.0).apply {
                 children.addAll(
@@ -848,7 +877,7 @@ class PropertiesPane(
         scope.launch(Dispatchers.IO) {
             years.forEach { year ->
                 val checkBox = checkBoxByYear.getValue(year)
-                if (checkBox.isIndeterminate) return@forEach // user didn't touch it — leave unset
+                if (checkBox.isIndeterminate) return@forEach // user didn't touch it – leave unset
 
                 val existing = currentByYear[year]
                 if (existing == null || existing.foreignTaxCreditRelief != checkBox.isSelected) {
@@ -892,7 +921,7 @@ class PropertiesPane(
 
     // ── Tables ──────────────────────────────────────────────────────────
 
-    /** Plain centre-aligned TableCell — used where a column's values read
+    /** Plain centre-aligned TableCell – used where a column's values read
      *  better centred than left-aligned (e.g. postcodes, dates, codes). */
     private fun centeredCell(): TableCell<Property, String> {
         return object : TableCell<Property, String>() {
@@ -934,6 +963,28 @@ class PropertiesPane(
         }
     }
 
+    /**
+     * Disables [button] unless a row of [table] is selected, [usable] says
+     * the selected property is one the button applies to, and [also] (if
+     * given) is false. Bound rather than set, so it follows the selection
+     * by itself and every button of the table behaves the same way.
+     */
+    private fun bindDisabledUnlessUsable(
+        button: Button,
+        table:  TableView<Property>,
+        also:   ObservableBooleanValue? = null,
+        usable: (Property) -> Boolean = { true },
+    ) {
+        val unavailable = Bindings.createBooleanBinding(
+            {
+                val selected = table.selectionModel.selectedItem
+                selected == null || !usable(selected)
+            },
+            table.selectionModel.selectedItemProperty(),
+        )
+        button.disableProperty().bind(if (also != null) unavailable.or(also) else unavailable)
+    }
+
     private fun buildUkPropertiesTable(): VBox {
         val table = TableView<Property>(ukProperties).apply {
             prefHeight  = 220.0
@@ -965,7 +1016,7 @@ class PropertiesPane(
 
         val editBtn   = buildEditUkButton(table) { loadProperties() }
         val endBtn    = buildEndButton(table) { loadProperties() }
-        val removeBtn = buildRemoveButton(table) { loadProperties() }
+        val deleteBtn = buildDeleteButton(table) { loadProperties() }
 
         return VBox(8.0).apply {
             padding = Insets(12.0, 16.0, 12.0, 16.0)
@@ -975,45 +1026,40 @@ class PropertiesPane(
                 wrappingLabel("Your UK properties").apply { style = "-fx-font-weight: bold;" },
                 Separator(),
                 table,
-                HBox(10.0, editBtn, endBtn, removeBtn),
+                HBox(10.0, editBtn, endBtn, infoPopup(END_LETTING_EXPLANATION), deleteBtn, infoPopup(DELETE_EXPLANATION))
+                    .apply { alignment = Pos.CENTER_LEFT },
             )
         }
     }
 
     /**
-     * Builds the "Edit…" button shown against the UK properties table.
-     * Selection is checked at click time (matching the End/Remove buttons'
-     * pattern below) rather than via a selection listener, since — unlike
-     * Register with HMRC or FTCR — there is no async eligibility check to
-     * run ahead of enabling it: any selected UK property can be edited.
+     * Builds the "Edit…" button shown against the UK properties table. It
+     * is disabled until a row is selected: any selected UK property can be
+     * edited.
      */
     private fun buildEditUkButton(table: TableView<Property>, onEdited: () -> Unit): Button {
         return Button("Edit…").apply {
-            styleClass.add("primary-action-button")
+            styleClass.add("secondary-action-button")
+            bindDisabledUnlessUsable(this, table)
             setOnAction {
-                val selected = table.selectionModel.selectedItem
-                if (selected == null) {
-                    Dialogs.showError("Please select a property to edit.")
-                } else {
-                    handleEditUk(selected, onEdited)
-                }
+                // Disabled while nothing is selected, so this null check is
+                // only a safeguard.
+                val selected = table.selectionModel.selectedItem ?: return@setOnAction
+                handleEditUk(selected, onEdited)
             }
         }
     }
 
     /** As [buildEditUkButton], for the foreign properties table. Any
-     *  selected foreign property can be edited — eligibility for the HMRC
+     *  selected foreign property can be edited – eligibility for the HMRC
      *  call (if any) is worked out inside handleEditForeign() itself. */
     private fun buildEditForeignButton(table: TableView<Property>, onEdited: () -> Unit): Button {
         return Button("Edit…").apply {
-            styleClass.add("primary-action-button")
+            styleClass.add("secondary-action-button")
+            bindDisabledUnlessUsable(this, table)
             setOnAction {
-                val selected = table.selectionModel.selectedItem
-                if (selected == null) {
-                    Dialogs.showError("Please select a property to edit.")
-                } else {
-                    handleEditForeign(selected, onEdited)
-                }
+                val selected = table.selectionModel.selectedItem ?: return@setOnAction
+                handleEditForeign(selected, onEdited)
             }
         }
     }
@@ -1039,7 +1085,7 @@ class PropertiesPane(
                     setCellFactory { centeredCell() }
                 },
                 TableColumn<Property, String>("HMRC property ID").apply {
-                    // A UUID is 36 characters — the previous 160/200/140
+                    // A UUID is 36 characters – the previous 160/200/140
                     // width caused truncation (observed: cut off after 21
                     // chars). Widened to comfortably fit the full value.
                     prefWidth = 280.0; maxWidth = 320.0; minWidth = 260.0
@@ -1065,41 +1111,29 @@ class PropertiesPane(
         }
         applyEndedRowStyling(table)
 
-        registerHmrcBtn = Button("Register with HMRC").apply {
+        // The one primary button in this row: registering an unregistered
+        // property is the only action here that moves the property forward.
+        val registerHmrcBtn = Button("Register with HMRC").apply {
             styleClass.add("primary-action-button")
-            isDisable = true
+            bindDisabledUnlessUsable(this, table, also = registering, usable = ::canRegisterWithHmrc)
             setOnAction {
-                val selected = table.selectionModel.selectedItem
-                when {
-                    selected == null -> Dialogs.showError("Please select a property to register.")
-                    selected.hmrcPropertyId != null -> Dialogs.showError("This property is already registered with HMRC.")
-                    selected.endedAt != null -> Dialogs.showError("This property has already ended, so it can't be registered with HMRC.")
-                    else -> handleRegisterWithHmrc(selected)
-                }
+                val selected = table.selectionModel.selectedItem ?: return@setOnAction
+                handleRegisterWithHmrc(selected)
             }
         }
 
-        ftcrBtn = Button("Foreign Tax Credit Relief…").apply {
-            styleClass.add("primary-action-button")
-            isDisable = true
+        val ftcrBtn = Button("Foreign Tax Credit Relief…").apply {
+            styleClass.add("secondary-action-button")
+            bindDisabledUnlessUsable(this, table)
             setOnAction {
-                val selected = table.selectionModel.selectedItem
-                if (selected == null) {
-                    Dialogs.showError("Please select a property.")
-                } else {
-                    handleForeignTaxCreditRelief(selected)
-                }
+                val selected = table.selectionModel.selectedItem ?: return@setOnAction
+                handleForeignTaxCreditRelief(selected)
             }
-        }
-
-        table.selectionModel.selectedItemProperty().addListener { _, _, selected ->
-            registerHmrcBtn.isDisable = selected == null || selected.hmrcPropertyId != null || selected.endedAt != null
-            ftcrBtn.isDisable = selected == null
         }
 
         val editBtn   = buildEditForeignButton(table) { loadProperties() }
         val endBtn    = buildEndButton(table) { loadProperties() }
-        val removeBtn = buildRemoveButton(table) { loadProperties() }
+        val deleteBtn = buildDeleteButton(table) { loadProperties() }
 
         return VBox(8.0).apply {
             padding = Insets(12.0, 16.0, 12.0, 16.0)
@@ -1109,31 +1143,33 @@ class PropertiesPane(
                 wrappingLabel("Your foreign properties").apply { style = "-fx-font-weight: bold;" },
                 Separator(),
                 table,
-                HBox(10.0, editBtn, registerHmrcBtn, ftcrBtn, endBtn, removeBtn),
+                HBox(
+                    10.0, editBtn, registerHmrcBtn, ftcrBtn,
+                    endBtn, infoPopup(END_LETTING_EXPLANATION),
+                    deleteBtn, infoPopup(DELETE_EXPLANATION),
+                ).apply { alignment = Pos.CENTER_LEFT },
             )
         }
     }
 
     // ── End letting ─────────────────────────────────────────────────────
 
+    /**
+     * The "End letting…" button. Disabled until a row is selected, and
+     * for a property which has already ended (see [canEndLetting]).
+     */
     private fun buildEndButton(table: TableView<Property>, onEnded: () -> Unit): Button {
         return Button("End letting…").apply {
-            styleClass.add("primary-action-button")
+            styleClass.add("danger-action-button")
+            bindDisabledUnlessUsable(this, table, usable = ::canEndLetting)
             setOnAction {
-                val selected = table.selectionModel.selectedItem
-                when {
-                    selected == null -> {
-                        Dialogs.showError("Please select a property to end.")
-                    }
-                    selected.endedAt != null -> {
-                        Dialogs.showError("This property has already ended.")
-                    }
-                    selected.propertyType == PropertyType.FOREIGN && selected.hmrcPropertyId != null -> {
-                        handleEndRegisteredForeignProperty(selected, onEnded)
-                    }
-                    else -> {
-                        confirmAndEnd(selected, onEnded)
-                    }
+                // Disabled unless a property which can be ended is
+                // selected, so this null check is only a safeguard.
+                val selected = table.selectionModel.selectedItem ?: return@setOnAction
+                if (selected.propertyType == PropertyType.FOREIGN && selected.hmrcPropertyId != null) {
+                    handleEndRegisteredForeignProperty(selected, onEnded)
+                } else {
+                    confirmAndEnd(selected, onEnded)
                 }
             }
         }
@@ -1162,7 +1198,7 @@ class PropertiesPane(
     /**
      * Ending a foreign property that's registered with HMRC must first end
      * it there via Update Foreign Property Details (there's no separate
-     * delete endpoint) — otherwise the record stays "active" on HMRC's side
+     * delete endpoint) – otherwise the record stays "active" on HMRC's side
      * while LibreMTD thinks it's ended. If the HMRC call fails, we deliberately
      * do NOT mark it ended locally, to keep the two in sync.
      */
@@ -1171,7 +1207,7 @@ class PropertiesPane(
         if (taxYear.isNullOrBlank()) {
             Dialogs.showError(
                 "This property has an HMRC property ID but no recorded registration tax year " +
-                        "— likely registered before this tracking was added. It can't be safely " +
+                        "– likely registered before this tracking was added. It can't be safely " +
                         "ended with HMRC automatically. Please check its record on HMRC directly, " +
                         "or if you know the tax year it was registered under, that can be backfilled " +
                         "in the database.",
@@ -1222,7 +1258,7 @@ class PropertiesPane(
                     withContext(Dispatchers.JavaFx) {
                         Dialogs.showError(
                             "Could not end the property with HMRC, so it has not been marked as " +
-                                    "ended locally either — this keeps LibreMTD and HMRC in sync.\n\n${result.message}",
+                                    "ended locally either – this keeps LibreMTD and HMRC in sync.\n\n${result.message}",
                             title = "HMRC update failed",
                         )
                     }
@@ -1267,16 +1303,16 @@ class PropertiesPane(
         return dialog.showAndWait().orElse(null)
     }
 
-    // ── Remove ──────────────────────────────────────────────────────────
+    // ── Delete ──────────────────────────────────────────────────────────
 
     /**
      * True only if the property has never had an income or expense entry
-     * recorded against it (checking full history, not just current rows —
+     * recorded against it (checking full history, not just current rows –
      * even a superseded entry is evidence of real use). FTCR election rows
      * are deliberately not checked; see ForeignPropertyElectionRepository's
-     * "Do we care about this one?" discussion — every foreign property gets
+     * "Do we care about this one?" discussion – every foreign property gets
      * an election row automatically on creation, so treating that as "real
-     * use" would mean no foreign property could ever be removed.
+     * use" would mean no foreign property could ever be deleted.
      */
     private fun hasNoEntries(property: Property): Boolean {
         return when (property.propertyType) {
@@ -1290,17 +1326,26 @@ class PropertiesPane(
     }
 
     /**
-     * Builds the Remove button and wires it to the table's selection so its
-     * enabled state and colour reflect whether the *currently selected*
-     * property can actually be removed — rather than always looking the
-     * same and only revealing whether removal is possible once clicked.
+     * Builds the Delete button and wires its enabled state to the table's
+     * selection, so it is only enabled when the *currently selected*
+     * property can actually be deleted, rather than only revealing whether
+     * deletion is possible once clicked. (Called Remove in the repository,
+     * where [PropertyRepository.remove] is a hard DELETE; the user sees
+     * the same word as for an entry.)
      *
-     * The check needs a database read, so it's done asynchronously on
+     * The button is always a danger button. While it is disabled the shared
+     * disabled style in the theme files paints it flat grey, so there is no
+     * need to add and remove a style class as the state changes. Its state
+     * is set directly rather than bound, because it depends on a database
+     * read made on a background thread.
+     *
+     * The check needs a database read, so it is done asynchronously on
      * selection change; [checkToken] guards against a stale check landing
      * after the user has since selected something else.
      */
-    private fun buildRemoveButton(table: TableView<Property>, onRemoved: () -> Unit): Button {
-        val button = Button("Remove").apply {
+    private fun buildDeleteButton(table: TableView<Property>, onDeleted: () -> Unit): Button {
+        val button = Button("Delete").apply {
+            styleClass.add("danger-action-button")
             isDisable = true
         }
 
@@ -1310,31 +1355,19 @@ class PropertiesPane(
             checkToken++
             val thisToken = checkToken
 
-            if (selected == null) {
-                button.isDisable = true
-                button.styleClass.remove("primary-action-button")
-                return@addListener
-            }
-
-            // Disabled and un-highlighted while we check — avoids a flash
-            // of "removable" styling carried over from the previous selection.
+            // Disabled while we check (and for good if nothing is selected),
+            // so a "deletable" state carried over from the previous
+            // selection is never shown against the new one.
             button.isDisable = true
-            button.styleClass.remove("primary-action-button")
+            if (selected == null) return@addListener
 
             scope.launch(Dispatchers.IO) {
-                val removable = hasNoEntries(selected)
+                val deletable = hasNoEntries(selected)
                 withContext(Dispatchers.JavaFx) {
                     // Selection may have changed again while the check was
-                    // running — ignore a result that's no longer current.
+                    // running – ignore a result that's no longer current.
                     if (thisToken != checkToken) return@withContext
-                    button.isDisable = !removable
-                    if (removable) {
-                        if (!button.styleClass.contains("primary-action-button")) {
-                            button.styleClass.add("primary-action-button")
-                        }
-                    } else {
-                        button.styleClass.remove("primary-action-button")
-                    }
+                    button.isDisable = !deletable
                 }
             }
         }
@@ -1343,17 +1376,17 @@ class PropertiesPane(
             val selected = table.selectionModel.selectedItem
             // The button is only enabled once hasNoEntries() has already
             // been confirmed true for this selection, via the listener
-            // above — so no need to repeat that check here.
-            if (selected != null) confirmAndRemove(selected, onRemoved)
+            // above – so no need to repeat that check here.
+            if (selected != null) confirmAndDelete(selected, onDeleted)
         }
 
         return button
     }
 
-    private fun confirmAndRemove(selected: Property, onRemoved: () -> Unit) {
+    private fun confirmAndDelete(selected: Property, onDeleted: () -> Unit) {
         val confirmed = Alert(Alert.AlertType.CONFIRMATION).apply {
-            title       = "Remove property"
-            headerText  = "Permanently remove ${selected.address}?"
+            title       = "Delete property"
+            headerText  = "Permanently delete ${selected.address}?"
             contentText = "This property has no income or expense entries recorded, so it will " +
                     "be deleted completely rather than just ended. This cannot be undone."
         }.showAndWait().map { it.buttonData == ButtonBar.ButtonData.OK_DONE }.orElse(false)
@@ -1363,8 +1396,8 @@ class PropertiesPane(
         scope.launch(Dispatchers.IO) {
             PropertyRepository.remove(selected.id)
             withContext(Dispatchers.JavaFx) {
-                onRemoved()
-                onStatusChange("Property removed")
+                onDeleted()
+                onStatusChange("Property deleted")
             }
         }
     }
@@ -1382,7 +1415,7 @@ class PropertiesPane(
             val loaded = PropertyRepository.findByUser(userId)
             val foreign = loaded.filter { it.propertyType == PropertyType.FOREIGN }
             val summaries = foreign.associate { it.id to ftcrSummaryFor(it) }
-            // Active properties first, then ended ones, each alphabetically —
+            // Active properties first, then ended ones, each alphabetically –
             // ended properties stay visible for review rather than
             // disappearing, but shouldn't clutter the top of the table.
             val sortedUk = loaded.filter { it.propertyType == PropertyType.UK }

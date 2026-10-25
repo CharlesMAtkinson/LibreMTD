@@ -19,6 +19,7 @@
 
 package org.charlesatkinson.libremtd.ui
 
+import javafx.beans.property.SimpleBooleanProperty
 import javafx.beans.property.SimpleStringProperty
 import javafx.collections.FXCollections
 import javafx.geometry.Insets
@@ -77,14 +78,16 @@ class ExpensesPropertyForeignPane(
     // inserts a fresh one), so this only identifies which row to supersede.
     private var editingEntryId: Int? = null
 
+    // Mirrors "editingEntryId != null" as an observable, so the Edit and
+    // Delete buttons can bind their disabled state to it.
+    private val editing = SimpleBooleanProperty(false)
+
     private val categoryPicker = ComboBox<ForeignExpenseCategory>()
     private val amountField    = TextField()
     private val descField      = TextField()
     private val dateField      = TextField()
     private var addBtn: Button?        = null
     private var cancelEditBtn: Button? = null
-    private var editBtn: Button?       = null
-    private var deleteBtn: Button?     = null
 
     private val entryFormHeading   = wrappingLabel("New entry").apply { style = "-fx-font-weight: bold;" }
     private val entriesHeading     = wrappingLabel("").apply { style = "-fx-font-weight: bold;" }
@@ -156,8 +159,13 @@ class ExpensesPropertyForeignPane(
         }
     }
 
+    /**
+     * The Edit and Delete buttons are deliberately not listed here: their
+     * disabled state is bound (see [bindTableButton]) and includes the
+     * lock's own state, so passing them to update() would fail.
+     */
     private fun applyLock(isFinalDeclared: Boolean, taxYear: String) {
-        val controls = listOfNotNull(categoryPicker, amountField, descField, dateField, addBtn, editBtn, deleteBtn)
+        val controls = listOfNotNull(categoryPicker, amountField, descField, dateField, addBtn)
         finalDeclarationLock.update(isFinalDeclared, taxYear, *controls.toTypedArray())
     }
 
@@ -286,21 +294,20 @@ class ExpensesPropertyForeignPane(
     }
 
     // -------------------------------------------------------------------------
-    // Edit: reuses the New Entry form. "Edit selected" populates the form and
-    // turns Add into "Save changes"; "Cancel edit" returns to add mode.
+    // Edit: reuses the New Entry form. "Edit" populates the form and turns
+    // Add into "Save changes"; "Cancel edit" returns to add mode.
     // -------------------------------------------------------------------------
 
     private fun handleEditSelected(table: TableView<ExpensePropertyForeignEntry>) {
-        val selected = table.selectionModel.selectedItem
-        if (selected == null) {
-            Dialogs.showError("Please select an entry to edit.")
-            return
-        }
+        // The Edit button is disabled while nothing is selected, so this
+        // null check is only a safeguard.
+        val selected = table.selectionModel.selectedItem ?: return
         enterEditMode(selected)
     }
 
     private fun enterEditMode(entry: ExpensePropertyForeignEntry) {
         editingEntryId = entry.id
+        editing.set(true)
 
         categoryPicker.value = ForeignExpenseCategory.entries.firstOrNull { it.dbKey == entry.category }
         amountField.text     = "%.2f".format(entry.amount)
@@ -314,21 +321,17 @@ class ExpensesPropertyForeignPane(
 
         propertySelector.root.isDisable = true
         taxYearSelector.root.isDisable  = true
-
-        editBtn?.isDisable   = true
-        deleteBtn?.isDisable = true
     }
 
     private fun exitEditMode() {
         editingEntryId = null
+        editing.set(false)
         entryFormHeading.text    = "New entry"
         addBtn?.text             = "Add"
         cancelEditBtn?.isVisible = false
         cancelEditBtn?.isManaged = false
         propertySelector.root.isDisable = false
         taxYearSelector.root.isDisable  = false
-        editBtn?.isDisable   = false
-        deleteBtn?.isDisable = false
         clearForm()
     }
 
@@ -387,6 +390,19 @@ class ExpensesPropertyForeignPane(
         }
     }
 
+    /**
+     * Disables [button] unless a row is selected, the year is unlocked and
+     * no edit is in progress. Bound rather than set, so it stays correct
+     * whichever of the three changes.
+     */
+    private fun bindTableButton(button: Button, table: TableView<ExpensePropertyForeignEntry>) {
+        button.disableProperty().bind(
+            table.selectionModel.selectedItemProperty().isNull()
+                .or(finalDeclarationLock.lockedProperty)
+                .or(editing)
+        )
+    }
+
     private fun buildEntriesTable(): VBox {
         val table = TableView<ExpensePropertyForeignEntry>(entries).apply {
             prefHeight  = 260.0
@@ -418,20 +434,16 @@ class ExpensesPropertyForeignPane(
             )
         }
 
-        val newEditBtn = Button("Edit selected").apply {
-            styleClass.add("primary-action-button")
+        val editBtn = Button("Edit").apply {
+            styleClass.add("secondary-action-button")
             setOnAction { handleEditSelected(table) }
         }
-        editBtn = newEditBtn
+        bindTableButton(editBtn, table)
 
-        val newDeleteBtn = Button("Delete selected").apply {
-            styleClass.add("primary-action-button")
+        val deleteBtn = Button("Delete").apply {
+            styleClass.add("danger-action-button")
             setOnAction {
-                val selected = table.selectionModel.selectedItem
-                if (selected == null) {
-                    Dialogs.showError("Please select an entry to delete.")
-                    return@setOnAction
-                }
+                val selected = table.selectionModel.selectedItem ?: return@setOnAction
                 val confirmed = Dialogs.showConfirmation(
                     message    = "Delete this expense entry?",
                     title      = "Delete entry",
@@ -455,7 +467,7 @@ class ExpensesPropertyForeignPane(
                 }
             }
         }
-        deleteBtn = newDeleteBtn
+        bindTableButton(deleteBtn, table)
 
         return VBox(8.0).apply {
             padding = Insets(12.0, 16.0, 12.0, 16.0)
@@ -465,7 +477,7 @@ class ExpensesPropertyForeignPane(
                 entriesHeading,
                 Separator(),
                 table,
-                HBox(10.0, newEditBtn, newDeleteBtn),
+                HBox(10.0, editBtn, deleteBtn),
             )
         }
     }

@@ -36,6 +36,16 @@
 }
 
 /* ── Buttons ───────────────────────────────────────────────────────────── */
+/*
+ * Four kinds, told apart by form as well as colour:
+ *   plain     - filled blue-grey (dialogue buttons and anything unclassed)
+ *   primary   - filled green: the one main action of a button group
+ *   secondary - outlined green, transparent fill: a supporting action
+ *   danger    - filled red: a destructive action
+ * Every disabled button, of any kind, is the same flat grey with no accent
+ * colour and no border, so a disabled button can never be mistaken for an
+ * enabled secondary one. The disabled rule comes last so it wins any tie.
+ */
 
 .button {
     -fx-background-color: #7a8a9a;
@@ -48,10 +58,6 @@
 
 .button:pressed {
     -fx-background-color: #697888;
-}
-
-.button:disabled {
-    /* Inherits -fx-opacity: 0.5 from application.css */
 }
 
 /* Primary action: green, for submit / request / save */
@@ -68,13 +74,25 @@
     -fx-background-color: #155530;
 }
 
-.primary-action-button:disabled {
-    -fx-background-color: #b0b0b0;
-    -fx-text-fill: #e0e0e0;
-    -fx-opacity: 1.0;
+/* Secondary action: outlined. This theme's blue accent (#0096c9) only gives
+   about 3.4:1 on white, so the outline uses the same green as the primary
+   button: #1a6b3c gives about 6.5:1 on white and about 5.5:1 on the window
+   background, which passes AA. */
+.secondary-action-button {
+    -fx-background-color: transparent;
+    -fx-border-color: #1a6b3c;
+    -fx-text-fill: #1a6b3c;
 }
 
-/* Danger action: red-tinted, for disconnect / delete */
+.secondary-action-button:hover {
+    -fx-background-color: #1a6b3c1a;
+}
+
+.secondary-action-button:pressed {
+    -fx-background-color: #1a6b3c33;
+}
+
+/* Danger action: red-tinted, for delete / remove / end / disconnect */
 .danger-action-button {
     -fx-background-color: #a02020;
     -fx-text-fill: #ffffff;
@@ -88,8 +106,14 @@
     -fx-background-color: #841a1a;
 }
 
+/* Disabled: every kind. Colour carries the meaning, so the global opacity
+   is overridden to 1.0. Must stay the last button rule. */
+.button:disabled,
+.primary-action-button:disabled,
+.secondary-action-button:disabled,
 .danger-action-button:disabled {
     -fx-background-color: #b0b0b0;
+    -fx-border-color: transparent;
     -fx-text-fill: #e0e0e0;
     -fx-opacity: 1.0;
 }

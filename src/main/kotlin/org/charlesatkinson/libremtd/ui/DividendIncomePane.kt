@@ -17,7 +17,9 @@
 
 package org.charlesatkinson.libremtd.ui
 
+import javafx.beans.property.SimpleBooleanProperty
 import javafx.beans.property.SimpleStringProperty
+import javafx.beans.value.ObservableBooleanValue
 import javafx.collections.FXCollections
 import javafx.geometry.Insets
 import javafx.geometry.Pos
@@ -77,12 +79,13 @@ class DividendIncomePane(
     private val ukDateField      = TextField()
     private var ukAddBtn: Button?       = null
     private var ukCancelEditBtn: Button? = null
-    private var ukEditBtn: Button?      = null
-    private var ukDeleteBtn: Button?    = null
     private var editingUkEntryId: Int?  = null
+    // Mirrors "editingUkEntryId != null" as an observable, so this
+    // section's Edit and Delete buttons can bind their disabled state to it.
+    private val ukEditing = SimpleBooleanProperty(false)
     private val ukFormHeading = wrappingLabel("New entry").apply { style = "-fx-font-weight: bold;" }
 
-    // --- UK dividends — special types ---
+    // --- UK dividends – special types ---
     private val scalarEntries        = FXCollections.observableArrayList<IncomeDividendEntry>()
     private val scalarTotalLabel     = wrappingLabel("£0.00").apply { styleClass.add("total-value-label") }
     private val scalarCategoryPicker = ComboBox<DividendScalarCategory>()
@@ -91,9 +94,8 @@ class DividendIncomePane(
     private val scalarDateField      = TextField()
     private var scalarAddBtn: Button?       = null
     private var scalarCancelEditBtn: Button? = null
-    private var scalarEditBtn: Button?      = null
-    private var scalarDeleteBtn: Button?    = null
     private var editingScalarEntryId: Int?  = null
+    private val scalarEditing = SimpleBooleanProperty(false)
     private val scalarFormHeading = wrappingLabel("New entry").apply { style = "-fx-font-weight: bold;" }
 
     // --- Foreign dividends ---
@@ -109,9 +111,8 @@ class DividendIncomePane(
     private val foreignDateField         = TextField()
     private var foreignAddBtn: Button?       = null
     private var foreignCancelEditBtn: Button? = null
-    private var foreignEditBtn: Button?      = null
-    private var foreignDeleteBtn: Button?    = null
     private var editingForeignEntryId: Int?  = null
+    private val foreignEditing = SimpleBooleanProperty(false)
     private val foreignFormHeading = wrappingLabel("New entry").apply { style = "-fx-font-weight: bold;" }
 
     private lateinit var currentTaxYear: String
@@ -149,7 +150,7 @@ class DividendIncomePane(
             buildUkEntriesTable(),
             buildTotalBar(ukTotalLabel),
 
-            sectionHeading("UK dividends — special types"),
+            sectionHeading("UK dividends – special types"),
             hintLabel(
                 "Stock dividends (shares received instead of cash), redeemable shares, " +
                         "bonus issues of securities, and close company loans written off. " +
@@ -164,9 +165,9 @@ class DividendIncomePane(
             hintLabel(
                 "Dividends from overseas companies, and dividend income received whilst abroad. " +
                         "Each entry covers one country. Amount before tax, tax taken off, and special " +
-                        "withholding tax are optional — enter them if known. Taxable amount is required. " +
+                        "withholding tax are optional – enter them if known. Taxable amount is required. " +
                         "Tick 'foreign tax credit relief claimed' only if you are claiming relief for " +
-                        "overseas tax already paid — confirm with your tax adviser if unsure."
+                        "overseas tax already paid – confirm with your tax adviser if unsure."
             ),
             buildForeignEntryForm(),
             buildForeignEntriesTable(),
@@ -181,16 +182,34 @@ class DividendIncomePane(
         )
     }
 
+    /**
+     * The Edit and Delete buttons of the three sections are deliberately
+     * not listed here: their disabled state is bound (see
+     * [bindTableButton]) and includes the lock's own state, so passing
+     * them to update() would fail.
+     */
     private fun applyLock(isFinalDeclared: Boolean, taxYear: String) {
         val controls: List<Node> = listOfNotNull(
-            ukCategoryPicker, ukAmountField, ukDescField, ukDateField, ukAddBtn, ukEditBtn, ukDeleteBtn,
-            scalarCategoryPicker, scalarAmountField, scalarRefField, scalarDateField,
-            scalarAddBtn, scalarEditBtn, scalarDeleteBtn,
+            ukCategoryPicker, ukAmountField, ukDescField, ukDateField, ukAddBtn,
+            scalarCategoryPicker, scalarAmountField, scalarRefField, scalarDateField, scalarAddBtn,
             foreignCategoryPicker, foreignCountryField, foreignAmountBeforeField, foreignTaxTakenField,
-            foreignSwtField, foreignFtcrCheck, foreignTaxableField, foreignDateField,
-            foreignAddBtn, foreignEditBtn, foreignDeleteBtn,
+            foreignSwtField, foreignFtcrCheck, foreignTaxableField, foreignDateField, foreignAddBtn,
         )
         finalDeclarationLock.update(isFinalDeclared, taxYear, *controls.toTypedArray())
+    }
+
+    /**
+     * Disables [button] unless a row of [table] is selected, the year is
+     * unlocked and [editing] (the edit state of the button's own section)
+     * is false. Bound rather than set, so it stays correct whichever of
+     * the three changes.
+     */
+    private fun <T> bindTableButton(button: Button, table: TableView<T>, editing: ObservableBooleanValue) {
+        button.disableProperty().bind(
+            table.selectionModel.selectedItemProperty().isNull()
+                .or(finalDeclarationLock.lockedProperty)
+                .or(editing)
+        )
     }
 
     /**
@@ -314,19 +333,18 @@ class DividendIncomePane(
         }
     }
 
-    // ── UK dividends — Edit ──────────────────────────────────────────────
+    // ── UK dividends – Edit ──────────────────────────────────────────────
 
     private fun handleEditUkSelected(table: TableView<IncomeDividendEntry>) {
-        val selected = table.selectionModel.selectedItem
-        if (selected == null) {
-            Dialogs.showError("Please select an entry to edit.")
-            return
-        }
+        // The Edit button is disabled while nothing is selected, so this
+        // null check is only a safeguard.
+        val selected = table.selectionModel.selectedItem ?: return
         enterUkEditMode(selected)
     }
 
     private fun enterUkEditMode(entry: IncomeDividendEntry) {
         editingUkEntryId = entry.id
+        ukEditing.set(true)
 
         ukCategoryPicker.value = DividendCategory.entries.firstOrNull { it.dbKey == entry.category }
         ukAmountField.text     = "%.2f".format(entry.amount)
@@ -337,20 +355,17 @@ class DividendIncomePane(
         ukAddBtn?.text            = "Save changes"
         ukCancelEditBtn?.isVisible = true
         ukCancelEditBtn?.isManaged = true
-        ukEditBtn?.isDisable      = true
-        ukDeleteBtn?.isDisable    = true
 
         refreshTaxYearSelectorEnabled()
     }
 
     private fun exitUkEditMode() {
         editingUkEntryId = null
+        ukEditing.set(false)
         ukFormHeading.text        = "New entry"
         ukAddBtn?.text            = "Add"
         ukCancelEditBtn?.isVisible = false
         ukCancelEditBtn?.isManaged = false
-        ukEditBtn?.isDisable      = false
-        ukDeleteBtn?.isDisable    = false
         clearUkForm()
         refreshTaxYearSelectorEnabled()
     }
@@ -445,23 +460,23 @@ class DividendIncomePane(
                 },
             )
         }
-        val newEditBtn = Button("Edit selected").apply {
-            styleClass.add("primary-action-button")
+        val editBtn = Button("Edit").apply {
+            styleClass.add("secondary-action-button")
             setOnAction { handleEditUkSelected(table) }
         }
-        ukEditBtn = newEditBtn
+        bindTableButton(editBtn, table, ukEditing)
 
-        val newDeleteBtn = Button("Delete selected").apply {
-            styleClass.add("primary-action-button")
+        val deleteBtn = Button("Delete").apply {
+            styleClass.add("danger-action-button")
             setOnAction { deleteUkSelected(table) }
         }
-        ukDeleteBtn = newDeleteBtn
-        return entryFormCard("Entries", table, HBox(10.0, newEditBtn, newDeleteBtn))
+        bindTableButton(deleteBtn, table, ukEditing)
+
+        return entryFormCard("Entries", table, HBox(10.0, editBtn, deleteBtn))
     }
 
     private fun deleteUkSelected(table: TableView<IncomeDividendEntry>) {
-        val sel = table.selectionModel.selectedItem
-            ?: return Dialogs.showError("Please select an entry to delete.").let {}
+        val sel = table.selectionModel.selectedItem ?: return
         if (!Dialogs.showConfirmation(
                 message    = "Delete this UK dividend entry?",
                 title      = "Delete entry",
@@ -500,7 +515,7 @@ class DividendIncomePane(
     }
 
     // -------------------------------------------------------------------------
-    // UK dividends — special types
+    // UK dividends – special types
     // -------------------------------------------------------------------------
 
     private fun buildScalarEntryForm(): VBox {
@@ -615,19 +630,18 @@ class DividendIncomePane(
         }
     }
 
-    // ── UK dividends (special types) — Edit ─────────────────────────────
+    // ── UK dividends (special types) – Edit ─────────────────────────────
 
     private fun handleEditScalarSelected(table: TableView<IncomeDividendEntry>) {
-        val selected = table.selectionModel.selectedItem
-        if (selected == null) {
-            Dialogs.showError("Please select an entry to edit.")
-            return
-        }
+        // The Edit button is disabled while nothing is selected, so this
+        // null check is only a safeguard.
+        val selected = table.selectionModel.selectedItem ?: return
         enterScalarEditMode(selected)
     }
 
     private fun enterScalarEditMode(entry: IncomeDividendEntry) {
         editingScalarEntryId = entry.id
+        scalarEditing.set(true)
 
         scalarCategoryPicker.value = DividendScalarCategory.entries.firstOrNull { it.dbKey == entry.category }
         scalarAmountField.text     = "%.2f".format(entry.amount)
@@ -638,20 +652,17 @@ class DividendIncomePane(
         scalarAddBtn?.text            = "Save changes"
         scalarCancelEditBtn?.isVisible = true
         scalarCancelEditBtn?.isManaged = true
-        scalarEditBtn?.isDisable      = true
-        scalarDeleteBtn?.isDisable    = true
 
         refreshTaxYearSelectorEnabled()
     }
 
     private fun exitScalarEditMode() {
         editingScalarEntryId = null
+        scalarEditing.set(false)
         scalarFormHeading.text        = "New entry"
         scalarAddBtn?.text            = "Add"
         scalarCancelEditBtn?.isVisible = false
         scalarCancelEditBtn?.isManaged = false
-        scalarEditBtn?.isDisable      = false
-        scalarDeleteBtn?.isDisable    = false
         clearScalarForm()
         refreshTaxYearSelectorEnabled()
     }
@@ -744,23 +755,23 @@ class DividendIncomePane(
                 },
             )
         }
-        val newEditBtn = Button("Edit selected").apply {
-            styleClass.add("primary-action-button")
+        val editBtn = Button("Edit").apply {
+            styleClass.add("secondary-action-button")
             setOnAction { handleEditScalarSelected(table) }
         }
-        scalarEditBtn = newEditBtn
+        bindTableButton(editBtn, table, scalarEditing)
 
-        val newDeleteBtn = Button("Delete selected").apply {
-            styleClass.add("primary-action-button")
+        val deleteBtn = Button("Delete").apply {
+            styleClass.add("danger-action-button")
             setOnAction { deleteScalarSelected(table) }
         }
-        scalarDeleteBtn = newDeleteBtn
-        return entryFormCard("Entries", table, HBox(10.0, newEditBtn, newDeleteBtn))
+        bindTableButton(deleteBtn, table, scalarEditing)
+
+        return entryFormCard("Entries", table, HBox(10.0, editBtn, deleteBtn))
     }
 
     private fun deleteScalarSelected(table: TableView<IncomeDividendEntry>) {
-        val sel = table.selectionModel.selectedItem
-            ?: return Dialogs.showError("Please select an entry to delete.").let {}
+        val sel = table.selectionModel.selectedItem ?: return
         if (!Dialogs.showConfirmation(
                 message    = "Delete this dividend entry?",
                 title      = "Delete entry",
@@ -869,7 +880,7 @@ class DividendIncomePane(
                             foreignFtcrCheck,
                             infoPopup(
                                 "Tick 'foreign tax credit relief claimed' only if you are claiming relief for " +
-                                        "overseas tax already paid — confirm with your tax adviser if unsure."
+                                        "overseas tax already paid – confirm with your tax adviser if unsure."
                             ),
                             newAddBtn,
                             newCancelEditBtn,
@@ -949,19 +960,18 @@ class DividendIncomePane(
         }
     }
 
-    // ── Foreign dividends — Edit ─────────────────────────────────────────
+    // ── Foreign dividends – Edit ─────────────────────────────────────────
 
     private fun handleEditForeignSelected(table: TableView<IncomeDividendForeignEntry>) {
-        val selected = table.selectionModel.selectedItem
-        if (selected == null) {
-            Dialogs.showError("Please select an entry to edit.")
-            return
-        }
+        // The Edit button is disabled while nothing is selected, so this
+        // null check is only a safeguard.
+        val selected = table.selectionModel.selectedItem ?: return
         enterForeignEditMode(selected)
     }
 
     private fun enterForeignEditMode(entry: IncomeDividendForeignEntry) {
         editingForeignEntryId = entry.id
+        foreignEditing.set(true)
 
         foreignCategoryPicker.value    = DividendForeignCategory.entries.firstOrNull { it.dbKey == entry.category }
         foreignCountryField.text       = entry.countryCode
@@ -976,20 +986,17 @@ class DividendIncomePane(
         foreignAddBtn?.text            = "Save changes"
         foreignCancelEditBtn?.isVisible = true
         foreignCancelEditBtn?.isManaged = true
-        foreignEditBtn?.isDisable      = true
-        foreignDeleteBtn?.isDisable    = true
 
         refreshTaxYearSelectorEnabled()
     }
 
     private fun exitForeignEditMode() {
         editingForeignEntryId = null
+        foreignEditing.set(false)
         foreignFormHeading.text        = "New entry"
         foreignAddBtn?.text            = "Add"
         foreignCancelEditBtn?.isVisible = false
         foreignCancelEditBtn?.isManaged = false
-        foreignEditBtn?.isDisable      = false
-        foreignDeleteBtn?.isDisable    = false
         clearForeignForm()
         refreshTaxYearSelectorEnabled()
     }
@@ -1126,23 +1133,23 @@ class DividendIncomePane(
                 },
             )
         }
-        val newEditBtn = Button("Edit selected").apply {
-            styleClass.add("primary-action-button")
+        val editBtn = Button("Edit").apply {
+            styleClass.add("secondary-action-button")
             setOnAction { handleEditForeignSelected(table) }
         }
-        foreignEditBtn = newEditBtn
+        bindTableButton(editBtn, table, foreignEditing)
 
-        val newDeleteBtn = Button("Delete selected").apply {
-            styleClass.add("primary-action-button")
+        val deleteBtn = Button("Delete").apply {
+            styleClass.add("danger-action-button")
             setOnAction { deleteForeignSelected(table) }
         }
-        foreignDeleteBtn = newDeleteBtn
-        return entryFormCard("Entries", table, HBox(10.0, newEditBtn, newDeleteBtn))
+        bindTableButton(deleteBtn, table, foreignEditing)
+
+        return entryFormCard("Entries", table, HBox(10.0, editBtn, deleteBtn))
     }
 
     private fun deleteForeignSelected(table: TableView<IncomeDividendForeignEntry>) {
-        val sel = table.selectionModel.selectedItem
-            ?: return Dialogs.showError("Please select an entry to delete.").let {}
+        val sel = table.selectionModel.selectedItem ?: return
         if (!Dialogs.showConfirmation(
                 message    = "Delete this foreign dividend entry?",
                 title      = "Delete entry",
@@ -1205,7 +1212,7 @@ class DividendIncomePane(
 
             kotlinx.coroutines.withContext(Dispatchers.JavaFx) {
                 // Discard this result if a newer reload has been requested
-                // since this one started — see loadGeneration's doc comment.
+                // since this one started – see loadGeneration's doc comment.
                 if (generation != loadGeneration) return@withContext
 
                 ukEntries.setAll(uk)

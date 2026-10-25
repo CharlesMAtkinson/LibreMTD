@@ -36,6 +36,16 @@
 }
 
 /* ── Buttons ───────────────────────────────────────────────────────────── */
+/*
+ * Four kinds, told apart by form as well as colour:
+ *   plain     - filled grey-green (dialogue buttons and anything unclassed)
+ *   primary   - filled HMRC green: the one main action of a button group
+ *   secondary - outlined green, transparent fill: a supporting action
+ *   danger    - filled red: a destructive action
+ * Every disabled button, of any kind, is the same flat grey with no accent
+ * colour and no border, so a disabled button can never be mistaken for an
+ * enabled secondary one. The disabled rule comes last so it wins any tie.
+ */
 
 .button {
     -fx-background-color: #5a7a65;
@@ -48,10 +58,6 @@
 
 .button:pressed {
     -fx-background-color: #4a6a55;
-}
-
-.button:disabled {
-    /* Inherits -fx-opacity: 0.5 from application.css */
 }
 
 /* Primary action: HMRC green */
@@ -68,13 +74,23 @@
     -fx-background-color: #005a30;
 }
 
-.primary-action-button:disabled {
-    -fx-background-color: #b0c4b8;
-    -fx-text-fill: #e8f0eb;
-    -fx-opacity: 1.0;
+/* Secondary action: outlined. #00703c gives about 6.2:1 on white and about
+   5.8:1 on the window background, which passes AA. */
+.secondary-action-button {
+    -fx-background-color: transparent;
+    -fx-border-color: #00703c;
+    -fx-text-fill: #00703c;
 }
 
-/* Danger action: red-tinted, for disconnect / delete */
+.secondary-action-button:hover {
+    -fx-background-color: #00703c1a;
+}
+
+.secondary-action-button:pressed {
+    -fx-background-color: #00703c33;
+}
+
+/* Danger action: red-tinted, for delete / remove / end / disconnect */
 .danger-action-button {
     -fx-background-color: #a02020;
     -fx-text-fill: #ffffff;
@@ -88,8 +104,14 @@
     -fx-background-color: #841a1a;
 }
 
+/* Disabled: every kind. Colour carries the meaning, so the global opacity
+   is overridden to 1.0. Must stay the last button rule. */
+.button:disabled,
+.primary-action-button:disabled,
+.secondary-action-button:disabled,
 .danger-action-button:disabled {
     -fx-background-color: #b0c4b8;
+    -fx-border-color: transparent;
     -fx-text-fill: #e8f0eb;
     -fx-opacity: 1.0;
 }
