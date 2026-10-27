@@ -51,6 +51,26 @@ class LogFilePermissionsTest {
     }
 
     @Test
+    fun `fixes permissions on per-user log files and their rolled-over files`(@TempDir tempDir: Path) {
+        assumeTrue(FileSystems.getDefault().supportedFileAttributeViews().contains("posix"))
+
+        val userLog   = tempDir.resolve("alice.log")
+        val rolledLog = tempDir.resolve("alice-2026-01-08.log")
+        val oddName   = tempDir.resolve("a.b_c-d.log")
+        listOf(userLog, rolledLog, oddName).forEach {
+            Files.createFile(it)
+            Files.setPosixFilePermissions(it, PosixFilePermissions.fromString("rw-r--r--"))
+        }
+
+        enforceLogFilePermissions(tempDir)
+
+        val expected = PosixFilePermissions.fromString("rw-rw----")
+        listOf(userLog, rolledLog, oddName).forEach {
+            assertEquals(expected, Files.getPosixFilePermissions(it), it.fileName.toString())
+        }
+    }
+
+    @Test
     fun `leaves unrelated files in the log directory untouched`(@TempDir tempDir: Path) {
         assumeTrue(FileSystems.getDefault().supportedFileAttributeViews().contains("posix"))
 

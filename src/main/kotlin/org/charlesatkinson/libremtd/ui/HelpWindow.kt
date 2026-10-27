@@ -94,6 +94,17 @@ object HelpWindow {
         newStage.show()
     }
 
+    /**
+     * Closes the Help window if it is open. Called when a user logs out: the
+     * window was built from that user's preferences (theme, geometry, last
+     * topic), so it must not survive into the next user's session.
+     */
+    fun close() {
+        stage?.close()
+        stage = null
+        pane  = null
+    }
+
     private fun loadIcon(): Image? =
         try {
             javaClass.getResourceAsStream("/icons/libremtd-128.png")?.use { Image(it) }

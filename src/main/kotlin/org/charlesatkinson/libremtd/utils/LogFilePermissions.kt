@@ -36,20 +36,29 @@ import kotlin.concurrent.timer
  */
 private val LOG_FILE_PERMISSIONS = PosixFilePermissions.fromString("rw-rw----")
 
-private val LOG_FILE_NAME_PATTERN = Regex("""app(-\d{4}-\d{2}-\d{2})?\.log""")
+/**
+ * Every file in the log directory which LibreMTD's logging can create:
+ * app.log, <user name>.log and their daily rolled-over files such as
+ * app-2026-01-08.log and alice-2026-01-08.log. User names are reduced to
+ * letters, digits, full stops, hyphens and underscores in log file names
+ * (see UserLogging.logNameFor), so this pattern covers them all.
+ */
+private val LOG_FILE_NAME_PATTERN = Regex("""[A-Za-z0-9._-]+\.log""")
 
 /**
- * Scans [logDir] for files matching the app log naming pattern
- * (app.log, app-2026-01-08.log, etc.) and, on POSIX filesystems, sets
- * their permissions to rw-rw---- if they are not already correct.
+ * Scans [logDir] for files matching the log naming pattern
+ * (app.log, alice.log, app-2026-01-08.log, etc.) and, on POSIX
+ * filesystems, sets their permissions to rw-rw---- if they are not
+ * already correct.
  *
  * This exists because Logback does not manage file permissions itself:
  * files are created with whatever mode the JVM process's umask
  * dictates at the time it creates them, which is why existing log
  * files have inconsistent permissions. Calling this after logging
- * starts, and periodically thereafter, keeps permissions consistent
- * regardless of the umask in effect when the process was launched or
- * when a file is rolled over.
+ * starts, after each login (which creates that user's log file), and
+ * periodically thereafter, keeps permissions consistent regardless of
+ * the umask in effect when the process was launched or when a file is
+ * rolled over.
  *
  * Does nothing on non-POSIX filesystems (e.g. Windows). Silently
  * skips any file it cannot change, so a permissions problem never

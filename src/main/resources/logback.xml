@@ -1,19 +1,38 @@
 <configuration>
 
-    <property name="LOG_DIR" value="${LOG_DIR:-${user.home}/.local/state/LibreMTD/log}" />
+    <!-- Same directory as AppPaths.logDir: LOG_DIR if set, otherwise
+         $XDG_STATE_HOME/LibreMTD/log, otherwise ~/.local/state/LibreMTD/log -->
+    <property name="LOG_DIR" value="${LOG_DIR:-${XDG_STATE_HOME:-${user.home}/.local/state}/LibreMTD/log}" />
 
-    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>${LOG_DIR}/app.log</file>
+    <!--
+        One log file per logged-in user, so that two LibreMTD windows for two
+        different users never write to the same file.  Before login and after
+        logout the file is app.log.
 
-        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-            <!-- One log file per day -->
-            <fileNamePattern>${LOG_DIR}/app-%d{yyyy-MM-dd}.log</fileNamePattern>
-            <maxHistory>365</maxHistory>
-        </rollingPolicy>
+        The file name comes from CurrentUserLogDiscriminator (a process-wide
+        value, not MDC, because MDC is per thread and LibreMTD logs from the
+        JavaFX, IO and default coroutine threads).
+    -->
+    <appender name="FILE" class="ch.qos.logback.classic.sift.SiftingAppender">
+        <discriminator class="org.charlesatkinson.libremtd.utils.CurrentUserLogDiscriminator">
+            <key>logName</key>
+            <defaultValue>app</defaultValue>
+        </discriminator>
+        <sift>
+            <appender name="FILE-${logName}" class="ch.qos.logback.core.rolling.RollingFileAppender">
+                <file>${LOG_DIR}/${logName}.log</file>
 
-        <encoder>
-            <pattern>%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n</pattern>
-        </encoder>
+                <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+                    <!-- One log file per day -->
+                    <fileNamePattern>${LOG_DIR}/${logName}-%d{yyyy-MM-dd}.log</fileNamePattern>
+                    <maxHistory>365</maxHistory>
+                </rollingPolicy>
+
+                <encoder>
+                    <pattern>%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n</pattern>
+                </encoder>
+            </appender>
+        </sift>
     </appender>
 
     <root level="INFO">

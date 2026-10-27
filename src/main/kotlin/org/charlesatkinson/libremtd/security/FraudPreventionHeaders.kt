@@ -19,6 +19,7 @@ package org.charlesatkinson.libremtd.security
 
 import mu.KotlinLogging
 import org.charlesatkinson.libremtd.utils.AppPaths.deviceIdFile
+import org.charlesatkinson.libremtd.utils.AppPaths.licenceIdFile
 import org.charlesatkinson.libremtd.utils.Config
 import java.net.InetAddress
 import java.net.NetworkInterface
@@ -27,7 +28,6 @@ import java.nio.file.Files
 import java.nio.file.Paths
 import java.nio.file.StandardOpenOption.*
 import java.nio.file.attribute.PosixFilePermissions
-import java.nio.file.Path
 import java.security.MessageDigest
 import java.time.Instant
 import java.time.ZoneId
@@ -142,8 +142,9 @@ class FraudPreventionHeaders {
         attempt("Gov-Vendor-Product-Name") { getVendorProductName() }
             ?.let { headers["Gov-Vendor-Product-Name"] = it }
 
-        // Gov-Vendor-License-IDs (REQUIRED — sent with an empty value,
-        // since LibreMTD is FOSS and has no licence key to report)
+        // Gov-Vendor-License-IDs (REQUIRED — sent as a hashed, persistent,
+        // installation-specific value, since LibreMTD is FOSS and has no
+        // licence key to report)
         attempt("Gov-Vendor-License-IDs") { getVendorLicenseIds() }
             ?.let { headers["Gov-Vendor-License-IDs"] = it }
 
@@ -465,21 +466,22 @@ class FraudPreventionHeaders {
      * satisfy the header's technical requirement for a persistent hashed
      * value — but it's stable across runs on the same installation, which
      * is the property HMRC's spec actually asks for.
+     *
+     * The identifier is kept in AppPaths.licenceIdFile
+     * (/var/tmp/LibreMTD-licenceId), beside the device ID file.
      */
     private fun getVendorLicenseIds(): String =
-        buildKeyValueHeader(Config.APP_NAME to sha256Hex(getOrCreatePseudoLicenseId()))
+        buildKeyValueHeader(Config.APP_NAME to sha256Hex(getOrCreatePseudoLicenceId()))
 
-    private val pseudoLicenseIdFile: Path by lazy { deviceIdFile.resolveSibling("license-id") }
-
-    private fun getOrCreatePseudoLicenseId(): String {
-        if (Files.exists(pseudoLicenseIdFile) && Files.isReadable(pseudoLicenseIdFile)) {
-            return pseudoLicenseIdFile.readText().trim()
+    private fun getOrCreatePseudoLicenceId(): String {
+        if (Files.exists(licenceIdFile) && Files.isReadable(licenceIdFile)) {
+            return licenceIdFile.readText().trim()
         }
 
         return try {
             val newId = UUID.randomUUID().toString()
-            Files.writeString(pseudoLicenseIdFile, newId, CREATE, WRITE)
-            Files.setPosixFilePermissions(pseudoLicenseIdFile, PosixFilePermissions.fromString("rw-r--r--"))
+            Files.writeString(licenceIdFile, newId, CREATE, WRITE)
+            Files.setPosixFilePermissions(licenceIdFile, PosixFilePermissions.fromString("rw-r--r--"))
             newId
         } catch (e: Exception) {
             logger.warn(e) { "Could not persist pseudo-licence id; using a session-only value" }

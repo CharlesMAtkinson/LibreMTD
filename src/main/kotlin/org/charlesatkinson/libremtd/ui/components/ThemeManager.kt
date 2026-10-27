@@ -35,12 +35,21 @@ private val logger = KotlinLogging.logger {}
  * Usage:
  *   ThemeManager.apply(scene)           // on startup
  *   ThemeManager.switchTo(scene, theme) // when the user picks a new theme
+ *   ThemeManager.applyLoginTheme(scene) // when returning to the login screen
  */
 object ThemeManager {
 
     private fun cssUrl(name: String): String =
         ThemeManager::class.java.getResource("/styles/$name")?.toExternalForm()
             ?: error("Theme CSS not found: /styles/$name")
+
+    private fun removeThemeStylesheets(scene: Scene) {
+        scene.stylesheets.removeIf {
+            it.contains("dark-theme") ||
+                    it.contains("light-theme") ||
+                    it.contains("green-theme")
+        }
+    }
 
     fun apply(scene: Scene, prefs: UiPreferences) {
         val saved = prefs.theme
@@ -53,11 +62,7 @@ object ThemeManager {
         logger.info { "ThemeManager.switchTo: stylesheets before = ${scene.stylesheets}" }
         prefs.theme = theme
 
-        scene.stylesheets.removeIf {
-            it.contains("dark-theme") ||
-                    it.contains("light-theme") ||
-                    it.contains("green-theme")
-        }
+        removeThemeStylesheets(scene)
 
         val themeFile = when (theme) {
             UiTheme.DARK  -> "dark-theme.css"
@@ -67,5 +72,17 @@ object ThemeManager {
 
         scene.stylesheets.add(cssUrl(themeFile))
         logger.info { "ThemeManager.switchTo: stylesheets after = ${scene.stylesheets}" }
+    }
+
+    /**
+     * Shows the green theme the login screen is designed for, without
+     * saving it as any user's preference. Used when a user logs out and
+     * the window returns to the login screen: [switchTo] would overwrite
+     * that user's chosen theme with green.
+     */
+    fun applyLoginTheme(scene: Scene) {
+        removeThemeStylesheets(scene)
+        scene.stylesheets.add(cssUrl("green-theme.css"))
+        logger.info { "ThemeManager.applyLoginTheme: stylesheets = ${scene.stylesheets}" }
     }
 }

@@ -23,9 +23,11 @@ import javafx.scene.control.*
 import javafx.scene.layout.BorderPane
 import javafx.scene.layout.VBox
 import mu.KotlinLogging
+import org.charlesatkinson.libremtd.ui.components.attachCopyContextMenu
 import org.charlesatkinson.libremtd.ui.components.hintLabel
 import org.charlesatkinson.libremtd.ui.components.UiPreferences
 import org.charlesatkinson.libremtd.ui.components.normalizeText
+import org.charlesatkinson.libremtd.ui.components.wrappingLabel
 
 
 private val logger = KotlinLogging.logger {}
@@ -251,12 +253,32 @@ class HelpPane(
                 body("Savings income — record interest from UK bank and building society accounts."),
                 body("Submissions — submit quarterly updates for 6 April to 5 April tax years " +
                         "and the final declaration directly to HMRC"),
-                subheading("Copying user interface dynamic text"),
-                body("Dynamic text including error messages may be copied by context clicking the " +
-                        "text and choosing Copy"),
+                subheading("Copying user interface text"),
+                body("Text in this window and dynamic text such as error messages may be copied by " +
+                        "context clicking the text and choosing Copy.  The whole of the text is copied."),
+                subheading("Platform"),
+                body("LibreMTD is developed and tested on Linux.  Your home directory must be on " +
+                        "a local file system, not NFS: the lock which keeps each user to one window, " +
+                        "and SQLite's own locking, are not reliable on NFS."),
+                subheading("One window per user"),
+                body("Each LibreMTD user can be logged in to one LibreMTD window at a time.  " +
+                        "Different users can have windows open at the same time.  If a window or the " +
+                        "computer crashes there is nothing to clean up: the lock is released " +
+                        "automatically."),
                 subheading("Files"),
-                body("Log — ~/.local/state/LibreMTD/log/app.log"),
-                body("Database — ~/.local/share/LibreMTD/app.db"),
+                body("Log directory: \$XDG_STATE_HOME/LibreMTD/log, normally ~/.local/state/LibreMTD/log"),
+                body("Log files: app.log before login and after logout, and <user name>.log while " +
+                        "a user is logged in.  Characters in a user name other than letters, digits, " +
+                        "full stops, hyphens and underscores are replaced by underscores in the file name."),
+                body("Database directory: \$XDG_DATA_HOME/LibreMTD, normally ~/.local/share/LibreMTD.  " +
+                        "The database is app.db there."),
+                body("Lock files: \$XDG_DATA_HOME/LibreMTD/locks, normally ~/.local/share/LibreMTD/locks.  " +
+                        "There is one per user.  They are never deleted and are safe to ignore."),
+                body("Device ID: /var/tmp/LibreMTD-deviceId"),
+                body("Licence ID: /var/tmp/LibreMTD-licenceId"),
+                body("The device ID and licence ID files are shared by every Linux user of the " +
+                        "computer.  HMRC's fraud prevention headers require them to stay the same " +
+                        "from one run to the next."),
                 subheading("Free and open source (FOSS)"),
                 body("LibreMTD is distributed under the GNU General Public Licence v3 (GPL-3.0). " +
                         "You are free to use, study, modify and redistribute it. The source code is available at:"),
@@ -339,20 +361,25 @@ class HelpPane(
     }
 
     // ── Widget helpers ────────────────────────────────────────────────────────
+    //
+    // Every piece of text is a wrappingLabel (directly, or via hintLabel), which
+    // carries the standard right-click > Copy menu, so all the help text is
+    // copyable.
 
-    private fun heading(text: String)    = Label(text).apply { style = "-fx-font-size: 18px; -fx-font-weight: bold;" }
-    private fun subheading(text: String) = Label(text).apply { style = "-fx-font-size: 13px; -fx-font-weight: bold;" }
+    private fun heading(text: String)    = wrappingLabel(text).apply { style = "-fx-font-size: 18px; -fx-font-weight: bold;" }
+    private fun subheading(text: String) = wrappingLabel(text).apply { style = "-fx-font-size: 13px; -fx-font-weight: bold;" }
     private fun body(text: String)       = hintLabel(text).apply {
         isWrapText = true
         maxWidth   = Double.MAX_VALUE
         prefWidth = 1.0
         style = "-fx-font-size: 12px;"
     }
-    private fun infoRow(key: String, value: String) = Label("$key:  $value")
+    private fun infoRow(key: String, value: String) = wrappingLabel("$key:  $value")
 
     private fun hyperlink(url: String) = Hyperlink(url).apply {
         setOnAction { openUrl(url) }
         tooltip = Tooltip(url)
+        attachCopyContextMenu(this)
     }
 
     private fun openUrl(url: String) {

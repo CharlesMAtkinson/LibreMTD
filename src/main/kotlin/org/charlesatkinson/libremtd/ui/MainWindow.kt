@@ -168,12 +168,19 @@ internal fun <D> resolvePane(
     return pane
 }
 
+/**
+ * @param onLogOut Called on the JavaFX thread when the user chooses File >
+ *                 Log out, after this window has cleared its own state
+ *                 (tokens, API client, pane cache). The caller (LoginScreen)
+ *                 puts the login screen back and releases the instance lock.
+ */
 class MainWindow(
     private val scope:              CoroutineScope,
     private val stage:              Stage,
     private val user:               User,
     private val settingsRepository: SettingsRepository = SettingsRepository(),
     private val initialMtdStatus:   MtdConnectionStatus = MtdConnectionStatus.Disconnected,
+    private val onLogOut:           () -> Unit,
 ) {
     private val prefs = UiPreferences(user.id)
     val root: BorderPane = BorderPane().apply {
@@ -529,11 +536,15 @@ class MainWindow(
         }
     }
 
+    /**
+     * Clears everything this window holds for the user, then hands over to
+     * [onLogOut], which replaces this window with the login screen.
+     */
     private fun handleLogOut() {
         TokenStore.clearMemory()
         apiClient = null
         paneCache.clear()
-        setStatus("Logged out")
+        onLogOut()
     }
 
     private fun setupWindowSizeListeners() {

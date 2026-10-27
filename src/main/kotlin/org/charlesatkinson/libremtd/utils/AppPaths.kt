@@ -27,7 +27,26 @@ private val logger = KotlinLogging.logger {}
 
 const val APP_NAME = "LibreMTD"
 
+/**
+ * The application's directory under an XDG base directory:
+ * "<envValue>/LibreMTD" when [envValue] is set to an absolute path,
+ * otherwise "<home>/<defaultRelative>/LibreMTD". As the XDG specification
+ * requires, an empty or relative value is treated as unset.
+ *
+ * A top-level function, separate from the AppPaths object, so tests can call
+ * it without AppPaths creating any directories.
+ */
+internal fun xdgAppDir(envValue: String?, home: String, defaultRelative: String): Path {
+    val base = envValue
+        ?.takeIf { it.isNotBlank() && Paths.get(it).isAbsolute }
+        ?.let { Paths.get(it) }
+        ?: Paths.get(home, defaultRelative)
+    return base.resolve(APP_NAME)
+}
+
 object AppPaths {
+
+    private val home: String = System.getProperty("user.home")
 
     // Helper: require a directory to exist or terminate
     private fun requireDir(path: Path, description: String): Path {
@@ -42,45 +61,41 @@ object AppPaths {
         }
     }
 
-    // Log directory (XDG_STATE_HOME/<APP_NAME>/log)
-    // Must succeed or terminate
+    // A file in /var/tmp, shared by every Linux user of the computer
+    private fun varTmpFile(name: String): Path =
+        Paths.get("/var/tmp")
+            .resolve(name)
+            .also { path ->
+                if (!Files.exists(path.parent)) {
+                    logger.error {
+                        "Expected /var/tmp directory does not exist; $name may not be usable"
+                    }
+                }
+            }
+
+    // Log directory ($XDG_STATE_HOME/<APP_NAME>/log)
+    // Must succeed or terminate.  logback.xml works out the same directory.
     val logDir: Path = requireDir(
-        Paths.get(
-            System.getenv("XDG_STATE_HOME")
-                ?: "${System.getProperty("user.home")}/.local/state/$APP_NAME"
-        ).resolve("log"),
+        xdgAppDir(System.getenv("XDG_STATE_HOME"), home, ".local/state").resolve("log"),
         "log directory"
     )
 
-    // Config directory (XDG_CONFIG_HOME/<APP_NAME>)
-    val configPath: Path = requireDir(
-        Paths.get(
-            System.getenv("XDG_CONFIG_HOME")
-                ?: "${System.getProperty("user.home")}/.config/$APP_NAME"
-        ),
-        "config directory"
-    )
-
-    // Data directory (XDG_DATA_HOME/<APP_NAME>)
+    // Data directory ($XDG_DATA_HOME/<APP_NAME>)
     val dataDir: Path = requireDir(
-        Paths.get(
-            System.getenv("XDG_DATA_HOME")
-                ?: "${System.getProperty("user.home")}/.local/share/$APP_NAME"
-        ),
+        xdgAppDir(System.getenv("XDG_DATA_HOME"), home, ".local/share"),
         "data directory"
     )
 
     // SQLite database file (inside dataDir)
     val dbPath: Path = dataDir.resolve("app.db")
 
+    // One lock file per LibreMTD user (inside dataDir, so it follows the
+    // database). See UserInstanceLock.
+    val locksDir: Path = requireDir(dataDir.resolve("locks"), "lock directory")
+
     // Device ID file (/var/tmp/<APP_NAME>-deviceId)
-    val deviceIdFile: Path = Paths.get("/var/tmp")
-        .resolve("$APP_NAME-deviceId")
-        .also { path ->
-            if (!Files.exists(path.parent)) {
-                logger.error {
-                    "Expected /var/tmp directory does not exist; deviceIdFile may not be usable"
-                }
-            }
-        }
+    val deviceIdFile: Path = varTmpFile("$APP_NAME-deviceId")
+
+    // Licence ID file (/var/tmp/<APP_NAME>-licenceId)
+    val licenceIdFile: Path = varTmpFile("$APP_NAME-licenceId")
 }

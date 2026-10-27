@@ -29,6 +29,7 @@ import org.charlesatkinson.libremtd.database.Database
 import org.charlesatkinson.libremtd.ui.LoginScreen
 import org.charlesatkinson.libremtd.utils.AppPaths
 import org.charlesatkinson.libremtd.utils.Config
+import org.charlesatkinson.libremtd.utils.SessionInstanceLock
 import org.charlesatkinson.libremtd.utils.enforceLogFilePermissions
 import org.charlesatkinson.libremtd.utils.scheduleLogFilePermissionEnforcement
 
@@ -40,17 +41,17 @@ class LibreMTD : Application() {
     override fun start(primaryStage: Stage) {
         logger.info { "Starting LibreMTD version ${Config.VERSION}" }
         logger.info { "Log directory: ${AppPaths.logDir}" }
-        logger.info { "Config path: ${AppPaths.configPath}" }
         logger.info { "Data directory: ${AppPaths.dataDir}" }
+        logger.info { "Lock directory: ${AppPaths.locksDir}" }
         logger.info { "Database file: ${AppPaths.dbPath}" }
         logger.info { "Device ID file: ${AppPaths.deviceIdFile}" }
+        logger.info { "Licence ID file: ${AppPaths.licenceIdFile}" }
 
         try {
             // Fix up log file permissions now, and keep fixing them
             // periodically in case the app is left running across a
-            // daily log rollover. AppPaths.logDir must be (or be
-            // convertible to) a java.nio.file.Path — adjust below if
-            // it is actually a File or String.
+            // daily log rollover. LoginScreen also calls this straight
+            // after a login, when that user's log file is first created.
             enforceLogFilePermissions(AppPaths.logDir)
             scheduleLogFilePermissionEnforcement(AppPaths.logDir)
 
@@ -76,7 +77,7 @@ class LibreMTD : Application() {
                 minWidth = 800.0
                 minHeight = 600.0
 
-                // Load window icons — JavaFX picks the closest size for each context
+                // Load window icons – JavaFX picks the closest size for each context
                 listOf(16, 32, 48, 128, 256).forEach { size ->
                     val path = "icons/libremtd-$size.png"
                     val stream = Thread.currentThread().contextClassLoader.getResourceAsStream(path)
@@ -100,6 +101,9 @@ class LibreMTD : Application() {
 
     override fun stop() {
         logger.info { "Shutting down LibreMTD" }
+        // The operating system would release the lock at process exit
+        // anyway; releasing it explicitly just makes the intent visible.
+        SessionInstanceLock.release()
         Database.close()
         super.stop()
     }
