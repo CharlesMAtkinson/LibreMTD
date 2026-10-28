@@ -1,8 +1,8 @@
 <configuration>
 
-    <!-- Same directory as AppPaths.logDir: LOG_DIR if set, otherwise
-         $XDG_STATE_HOME/LibreMTD/log, otherwise ~/.local/state/LibreMTD/log -->
-    <property name="LOG_DIR" value="${LOG_DIR:-${XDG_STATE_HOME:-${user.home}/.local/state}/LibreMTD/log}" />
+    <!-- Same directory as AppPaths.logDir: $XDG_STATE_HOME/LibreMTD/log,
+         otherwise ~/.local/state/LibreMTD/log -->
+    <property name="APP_LOG_DIR" value="${XDG_STATE_HOME:-${user.home}/.local/state}/LibreMTD/log" />
 
     <!--
         One log file per logged-in user, so that two LibreMTD windows for two
@@ -20,11 +20,11 @@
         </discriminator>
         <sift>
             <appender name="FILE-${logName}" class="ch.qos.logback.core.rolling.RollingFileAppender">
-                <file>${LOG_DIR}/${logName}.log</file>
+                <file>${APP_LOG_DIR}/${logName}.log</file>
 
                 <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
                     <!-- One log file per day -->
-                    <fileNamePattern>${LOG_DIR}/${logName}-%d{yyyy-MM-dd}.log</fileNamePattern>
+                    <fileNamePattern>${APP_LOG_DIR}/${logName}-%d{yyyy-MM-dd}.log</fileNamePattern>
                     <maxHistory>365</maxHistory>
                 </rollingPolicy>
 

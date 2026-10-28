@@ -270,6 +270,13 @@ class HelpPane(
                 body("Log files: app.log before login and after logout, and <user name>.log while " +
                         "a user is logged in.  Characters in a user name other than letters, digits, " +
                         "full stops, hyphens and underscores are replaced by underscores in the file name."),
+                body("Old log files: a log file holds one day's messages.  The first time something " +
+                        "is logged to it on a later day, it is renamed with its date added to the " +
+                        "name and a new file with the original name is started.  At the same moment, " +
+                        "log files with that name which are older than 365 days are deleted.  This " +
+                        "happens only to a log file which is being written to, so the log files of a " +
+                        "user who does not log in again are left exactly as they are.  You can " +
+                        "delete them yourself."),
                 body("Database directory: \$XDG_DATA_HOME/LibreMTD, normally ~/.local/share/LibreMTD.  " +
                         "The database is app.db there."),
                 body("Lock files: \$XDG_DATA_HOME/LibreMTD/locks, normally ~/.local/share/LibreMTD/locks.  " +
