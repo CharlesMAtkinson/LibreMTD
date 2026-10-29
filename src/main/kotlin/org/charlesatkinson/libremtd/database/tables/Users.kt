@@ -24,19 +24,14 @@ object Users : Table("libremtd_users") {
     val id = integer("id").autoIncrement()
     val username = varchar("username", 255).uniqueIndex()
     val passwordHash = varchar("password_hash", 60)
-    val email = varchar("email", 255).nullable()
-    
+
     // HMRC OAuth tokens
-    // val hmrcClientId = varchar("hmrc_client_id", 255).nullable()
     val hmrcAccessToken = text("hmrc_access_token").nullable()
     val hmrcRefreshToken = text("hmrc_refresh_token").nullable()
     val tokenExpiry = datetime("token_expiry").nullable()
-    
-    // VAT Registration Number
-    val vrn = varchar("vrn", 20).nullable()
-    
+
     val createdAt = datetime("created_at")
     val lastLogin = datetime("last_login").nullable()
-    
+
     override val primaryKey = PrimaryKey(id)
 }

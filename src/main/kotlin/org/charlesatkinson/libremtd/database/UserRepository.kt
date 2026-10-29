@@ -26,37 +26,44 @@ import java.time.LocalDateTime
 data class User(
     val id: Int,
     val username: String,
-    val email: String?,
     val hmrcAccessToken: String?,
     val hmrcRefreshToken: String?,
     val tokenExpiry: LocalDateTime?
 )
 
 object UserRepository {
-    
-    fun createUser(username: String, password: String, nino: String, email: String? = null): User? {
+
+    /**
+     * Creates a user, or returns null if [username] is already taken.
+     * The password must be at least eight characters (see
+     * [PasswordManager.hashPassword]).
+     */
+    fun createUser(username: String, password: String): User? {
         return transaction {
+            val taken = Users.selectAll()
+                .where { Users.username eq username }
+                .any()
+            if (taken) return@transaction null
+
             val passwordHash = PasswordManager.hashPassword(password)
             val now = LocalDateTime.now()
-            
+
             val userId = Users.insert {
                 it[Users.username] = username
                 it[Users.passwordHash] = passwordHash
-                it[Users.email] = email
                 it[createdAt] = now
             } get Users.id
-            
+
             User(
                 id = userId,
                 username = username,
-                email = email,
                 hmrcAccessToken = null,
                 hmrcRefreshToken = null,
                 tokenExpiry = null
             )
         }
     }
-    
+
     fun authenticate(username: String, password: String): User? {
         return transaction {
             val row = Users.selectAll()
@@ -76,14 +83,13 @@ object UserRepository {
             return@transaction User(
                 id = row[Users.id],
                 username = row[Users.username],
-                email = row[Users.email],
                 hmrcAccessToken = row[Users.hmrcAccessToken],
                 hmrcRefreshToken = row[Users.hmrcRefreshToken],
                 tokenExpiry = row[Users.tokenExpiry]
             )
         }
     }
-    
+
     fun updateHMRCTokens(
         userId: Int,
         accessToken: String,

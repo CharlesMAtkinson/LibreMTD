@@ -281,10 +281,10 @@ class LoginScreen(
         val dialog = RegisterDialog(primaryStage)
         val result = dialog.showAndWait()
 
-        result.ifPresent { (username, password, email) ->
+        result.ifPresent { (username, password) ->
             scope.launch {
                 val user = withContext(Dispatchers.IO) {
-                    UserRepository.createUser(username, password, email)
+                    UserRepository.createUser(username, password)
                 }
 
                 withContext(Dispatchers.JavaFx) {
@@ -397,9 +397,13 @@ class LoginScreen(
     }
 }
 
-class RegisterDialog(ownerStage: Stage) : Dialog<Triple<String, String, String>>() {
+/**
+ * Asks for a new user name and password. The result is (user name,
+ * password), with the user name already trimmed so it matches what the
+ * login form will later look up.
+ */
+class RegisterDialog(ownerStage: Stage) : Dialog<Pair<String, String>>() {
     private val usernameField = TextField()
-    private val emailField = TextField()
     private val passwordField = PasswordField()
     private val confirmPasswordField = PasswordField()
 
@@ -418,14 +422,11 @@ class RegisterDialog(ownerStage: Stage) : Dialog<Triple<String, String, String>>
         grid.add(Label("Username:"), 0, 0)
         grid.add(usernameField, 1, 0)
 
-        grid.add(Label("Email (optional):"), 0, 1)
-        grid.add(emailField, 1, 1)
+        grid.add(Label("Password:"), 0, 1)
+        grid.add(passwordField, 1, 1)
 
-        grid.add(Label("Password:"), 0, 2)
-        grid.add(passwordField, 1, 2)
-
-        grid.add(Label("Confirm Password:"), 0, 3)
-        grid.add(confirmPasswordField, 1, 3)
+        grid.add(Label("Confirm Password:"), 0, 2)
+        grid.add(confirmPasswordField, 1, 2)
 
         dialogPane.content = grid
 
@@ -434,7 +435,7 @@ class RegisterDialog(ownerStage: Stage) : Dialog<Triple<String, String, String>>
 
         setResultConverter { buttonType ->
             if (buttonType == registerButtonType) {
-                Triple(usernameField.text, passwordField.text, emailField.text)
+                Pair(usernameField.text.trim(), passwordField.text)
             } else {
                 null
             }
