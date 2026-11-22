@@ -460,7 +460,7 @@ class MainWindow(
             onStatusChange      = { msg -> setStatus(msg) },
             onPropertiesChanged = { discardCachedPanes(paneCache, PROPERTY_DEPENDENT_DESTINATIONS) },
         ).root
-        NavDestination.SavingsIncome          -> SavingsIncomePane(
+        NavDestination.SavingsIncome          -> IncomeSavingsPane(
             scope          = scope,
             userId         = user.id,
             onStatusChange = { msg -> setStatus(msg) },

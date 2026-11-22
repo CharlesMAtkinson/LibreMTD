@@ -42,7 +42,7 @@ import org.charlesatkinson.libremtd.ui.components.wrongTaxYearMessage
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
 
-class SavingsIncomePane(
+class IncomeSavingsPane(
     private val scope: CoroutineScope,
     private val userId: Int,
     private val onStatusChange: (String) -> Unit,
