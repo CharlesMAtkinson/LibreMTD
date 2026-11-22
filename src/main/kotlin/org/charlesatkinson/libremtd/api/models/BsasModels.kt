@@ -48,6 +48,8 @@ data class BsasExpensesBreakdown(
     val professionalFees: Double? = null,
     val costOfServices: Double? = null,
     val travelCosts: Double? = null,
+    // Read-only: HMRC has deprecated residentialFinancialCost for 2026-27
+    // onwards (it is returned as 0), so it is never displayed or sent.
     val residentialFinancialCost: Double? = null,
     val broughtFwdResidentialFinancialCost: Double? = null,
     val other: Double? = null,
@@ -73,6 +75,12 @@ data class BsasDeductions(
     val zeroEmissionsCarAllowance: Double? = null,
 )
 
+/**
+ * netLoss and adjustedIncomeTaxLoss are returned instead of netProfit and
+ * taxableProfit when the result is a loss. They were seen in HMRC's foreign
+ * property loss response; they are assumed to be the same for UK property,
+ * which has not yet been confirmed against a UK loss response.
+ */
 @Serializable
 data class BsasSummaryCalculation(
     val totalIncome: Double? = null,
@@ -80,11 +88,13 @@ data class BsasSummaryCalculation(
     val totalExpenses: Double? = null,
     val expenses: BsasExpensesBreakdown? = null,
     val netProfit: Double? = null,
+    val netLoss: Double? = null,
     val totalAdditions: Double? = null,
     val additions: BsasAdditions? = null,
     val totalDeductions: Double? = null,
     val deductions: BsasDeductions? = null,
     val taxableProfit: Double? = null,
+    val adjustedIncomeTaxLoss: Double? = null,
 )
 
 @Serializable
@@ -95,6 +105,8 @@ data class BsasAdjustmentsIncome(
     val otherPropertyIncome: Double? = null,
 )
 
+// residentialFinancialCost is deliberately absent: HMRC rejects it for
+// 2026-27 onwards (RULE_RESIDENTIAL_FINANCIAL_COST_NOT_ALLOWED).
 @Serializable
 data class BsasAdjustmentsExpenses(
     val premisesRunningCosts: Double? = null,
@@ -102,7 +114,6 @@ data class BsasAdjustmentsExpenses(
     val financialCosts: Double? = null,
     val professionalFees: Double? = null,
     val costOfServices: Double? = null,
-    val residentialFinancialCost: Double? = null,
     val other: Double? = null,
     val travelCosts: Double? = null,
 )
@@ -132,7 +143,7 @@ data class UkPropertyBsasResponse(
     val adjustedSummaryCalculation: BsasSummaryCalculation? = null,
 )
 
-// ── POST request models ───────────────────────────────────────────────────────
+// ── UK property POST request models ───────────────────────────────────────────
 
 @Serializable
 data class BsasPostIncome(
@@ -149,7 +160,6 @@ data class BsasPostExpenses(
     val financialCosts: Double? = null,
     val professionalFees: Double? = null,
     val costOfServices: Double? = null,
-    val residentialFinancialCost: Double? = null,
     val other: Double? = null,
     val travelCosts: Double? = null,
 )
@@ -162,7 +172,13 @@ sealed class BsasPostPayload {
     ) : BsasPostPayload()
 }
 
-// ── Foreign property BSAS GET response ───────────────────────────────────────
+// ── Foreign property BSAS: income and expenses ───────────────────────────────
+//
+// The same two classes are used for summary figures, existing adjustments
+// and the POST body, because HMRC uses the same field names in all three.
+// Consolidated expenses are not supported by LibreMTD, and
+// residentialFinancialCost is rejected by HMRC for 2026-27 onwards, so
+// neither is modelled.
 
 @Serializable
 data class ForeignPropertyBsasIncome(
@@ -173,53 +189,80 @@ data class ForeignPropertyBsasIncome(
 
 @Serializable
 data class ForeignPropertyBsasExpenses(
-    val premisesRunningCosts:     Double? = null,
-    val repairsAndMaintenance:    Double? = null,
-    val financialCosts:           Double? = null,
-    val professionalFees:         Double? = null,
-    val costOfServices:           Double? = null,
-    val travelCosts:              Double? = null,
-    val residentialFinancialCost: Double? = null,
-    val other:                    Double? = null,
-    // broughtFwdResidentialFinancialCost omitted: HMRC docs state it is not
-    // currently in use, will not be returned in a live environment, and will
-    // be removed in the near future.
+    val premisesRunningCosts:  Double? = null,
+    val repairsAndMaintenance: Double? = null,
+    val financialCosts:        Double? = null,
+    val professionalFees:      Double? = null,
+    val costOfServices:        Double? = null,
+    val travelCosts:           Double? = null,
+    val other:                 Double? = null,
 )
 
+// ── Foreign property BSAS GET response (tax years 2026-27 onwards) ───────────
+//
+// Shape confirmed from HMRC sandbox responses (FOREIGN_PROPERTY_PROFIT,
+// FOREIGN_PROPERTY_LOSS and DYNAMIC_FOREIGN_PROPERTY_PROFIT):
+//
+//   adjustableSummaryCalculation
+//     overall totals
+//     countryLevelDetail[]         one per country, with country totals
+//       propertyLevelDetail[]      one per property, keyed by propertyId
+//   adjustments
+//     propertyLevelDetail[]        one per property, keyed by propertyId
+//
+// A profit result has netProfit and taxableProfit; a loss result has
+// netLoss and adjustedIncomeTaxLoss instead.
+
 @Serializable
-data class ForeignPropertyBsasSummaryCalculation(
-    val totalIncome:        Double? = null,
-    val income:             ForeignPropertyBsasIncome? = null,
-    val totalExpenses:      Double? = null,
-    val expenses:           ForeignPropertyBsasExpenses? = null,
-    val netProfit:          Double? = null,
-    val taxableProfit:      Double? = null,
-    val countryLevelDetail: List<ForeignPropertyBsasCountryCalculation>? = null,
+data class ForeignPropertyBsasPropertyCalculation(
+    val propertyId:            String,
+    val totalIncome:           Double? = null,
+    val income:                ForeignPropertyBsasIncome? = null,
+    val totalExpenses:         Double? = null,
+    val expenses:              ForeignPropertyBsasExpenses? = null,
+    val netProfit:             Double? = null,
+    val netLoss:               Double? = null,
+    val taxableProfit:         Double? = null,
+    val adjustedIncomeTaxLoss: Double? = null,
 )
 
 @Serializable
 data class ForeignPropertyBsasCountryCalculation(
-    val countryCode:   String,
-    val totalIncome:   Double? = null,
-    val totalExpenses: Double? = null,
-    val netProfit:     Double? = null,
-    val taxableProfit: Double? = null,
-    val income:        ForeignPropertyBsasIncome? = null,
-    val expenses:      ForeignPropertyBsasExpenses? = null,
+    val countryCode:           String,
+    val totalIncome:           Double? = null,
+    val income:                ForeignPropertyBsasIncome? = null,
+    val totalExpenses:         Double? = null,
+    val expenses:              ForeignPropertyBsasExpenses? = null,
+    val netProfit:             Double? = null,
+    val netLoss:               Double? = null,
+    val taxableProfit:         Double? = null,
+    val adjustedIncomeTaxLoss: Double? = null,
+    val propertyLevelDetail:   List<ForeignPropertyBsasPropertyCalculation>? = null,
 )
 
 @Serializable
-data class ForeignPropertyBsasCountryAdjustment(
-    val countryCode: String,
-    val income:      ForeignPropertyBsasIncome? = null,
-    val expenses:    ForeignPropertyBsasExpenses? = null,
+data class ForeignPropertyBsasSummaryCalculation(
+    val totalIncome:           Double? = null,
+    val income:                ForeignPropertyBsasIncome? = null,
+    val totalExpenses:         Double? = null,
+    val expenses:              ForeignPropertyBsasExpenses? = null,
+    val netProfit:             Double? = null,
+    val netLoss:               Double? = null,
+    val taxableProfit:         Double? = null,
+    val adjustedIncomeTaxLoss: Double? = null,
+    val countryLevelDetail:    List<ForeignPropertyBsasCountryCalculation>? = null,
 )
 
-// 2025-26 shape: adjustments keyed by countryLevelDetail.
-// 2026-27 changes this to propertyLevelDetail — model will need extending then.
+@Serializable
+data class ForeignPropertyBsasPropertyAdjustment(
+    val propertyId: String,
+    val income:     ForeignPropertyBsasIncome? = null,
+    val expenses:   ForeignPropertyBsasExpenses? = null,
+)
+
 @Serializable
 data class ForeignPropertyBsasAdjustments(
-    val countryLevelDetail: List<ForeignPropertyBsasCountryAdjustment>? = null,
+    val propertyLevelDetail: List<ForeignPropertyBsasPropertyAdjustment>? = null,
 )
 
 @Serializable
@@ -231,17 +274,16 @@ data class ForeignPropertyBsasResponse(
 )
 
 // ── Foreign property BSAS POST payload ───────────────────────────────────────
+//
+// Sent as foreignProperty.propertyLevelDetail[]. See
+// BsasClient.buildForeignPostJson.
 
-// Income and expense field sets are identical to the GET response types,
-// so we reuse ForeignPropertyBsasIncome and ForeignPropertyBsasExpenses
-// for the POST body rather than duplicating them.
-
-data class ForeignPropertyBsasPostCountry(
-    val countryCode: String,
-    val income:      ForeignPropertyBsasIncome? = null,
-    val expenses:    ForeignPropertyBsasExpenses? = null,
+data class ForeignPropertyBsasPostProperty(
+    val propertyId: String,
+    val income:     ForeignPropertyBsasIncome? = null,
+    val expenses:   ForeignPropertyBsasExpenses? = null,
 )
 
 data class ForeignPropertyBsasPostPayload(
-    val countryLevelDetail: List<ForeignPropertyBsasPostCountry>,
+    val propertyLevelDetail: List<ForeignPropertyBsasPostProperty>,
 )

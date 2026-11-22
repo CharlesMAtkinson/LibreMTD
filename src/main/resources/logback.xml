@@ -39,6 +39,7 @@
         <appender-ref ref="FILE"/>
     </root>
 
-    <logger name="org.charlesatkinson.libremtd.network.HmrcApiClient" level="DEBUG"/>
+    // Set DEBUG, INFO, WARN or ERROR as required
+    <logger name="org.charlesatkinson.libremtd.network.HmrcApiClient" level="INFO"/>
 
 </configuration>

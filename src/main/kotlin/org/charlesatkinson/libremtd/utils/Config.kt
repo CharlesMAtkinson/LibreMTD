@@ -115,23 +115,63 @@ object Config {
     // Set via IntelliJ run configuration > Environment variables, or shell export.
     // Leave unset (or set to empty string) for DEFAULT sandbox behaviour.
     //
+    // The final declaration journey, in the order HMRC requires it:
+    //   1. (only if the user wants accounting adjustments) Trigger a BSAS for each
+    //      type of property the user has, which gives a calculationId for that BSAS
+    //   2. Retrieve the BSAS with that calculationId, show it, and submit adjustments
+    //   3. Trigger the intent-to-finalise tax calculation, which gives a different
+    //      calculationId, and retrieve it
+    //   4. Submit the final declaration with the intent-to-finalise calculationId
+    // A BSAS can be adjusted only once, so every adjustment needs a freshly
+    // triggered BSAS. Its calculationId must never be taken from step 3.
+    //
     // Obligations API scenarios (GET /obligations/details/{nino}/income-and-expenditure):
     //   FULFILLED, OPEN, DYNAMIC, CUMULATIVE, NOT_FOUND, NO_OBLIGATIONS_FOUND, INSOLVENT_TRADER
     //
     // Individual Calculations API scenarios (POST …/trigger/{calculationType}):
     //   DEFAULT, SUBMISSION_FAILED, TAX_YEAR_NOT_SUPPORTED, …
     //
-    // Individual Calculations API scenarios (POST …/{calculationId}/crystallisation):
+    // Individual Calculations API scenarios (POST …/{calculationId}/final-declaration):
     //   DEFAULT, OUTSIDE_AMENDMENT_WINDOW, FINAL_DECLARATION_IN_PROGRESS,
     //   FINAL_DECLARATION_RECEIVED, FINAL_DECLARATION_TAX_YEAR, INCOME_SOURCES_CHANGED,
     //   INCOME_SOURCES_INVALID, NO_INCOME_SUBMISSIONS_EXIST, RECENT_SUBMISSIONS_EXIST,
     //   RESIDENCY_CHANGED, SUBMISSION_FAILED, TAX_YEAR_NOT_SUPPORTED, NOT_FOUND
+    //   (This list was written when the path was wrongly /crystallisation. Check it
+    //   against HMRC's Individual Calculations 8.0 specification.)
     //
-    // BSAS API scenarios (GET …/adjustable-summary/{nino}/uk-property/{calculationId}/{taxYear}):
-    //   UK_PROPERTY_PROFIT, UK_PROPERTY_LOSS, UK_PROPERTY_ZERO_ADJUSTMENTS (2024-25 onwards),
-    //   UK_PROPERTY_STATUS_INVALID, UK_PROPERTY_STATUS_SUPERSEDED, NOT_UK_PROPERTY,
-    //   REQUEST_CANNOT_BE_FULFILLED, TAX_YEAR_NOT_SUPPORTED, STATEFUL
-    //   Leave unset for DEFAULT (simulates no data found).
+    // BSAS API 7.0 trigger scenarios (POST …/adjustable-summary/{nino}/trigger),
+    // checked against HMRC's specification:
+    //   DEFAULT (success: a non-stateful trigger works in the sandbox),
+    //   NO_ACCOUNTING_PERIOD, OBLIGATIONS_NOT_MET, ACCOUNTING_PERIOD_NOT_ENDED,
+    //   OUTSIDE_AMENDMENT_WINDOW (2025-26 onwards), NOT_FOUND, TAX_YEAR_NOT_SUPPORTED,
+    //   REQUEST_CANNOT_BE_FULFILLED, STATEFUL
+    //   Real errors also include RULE_ACCOUNTING_PERIOD_NOT_ALIGNED (the period must be
+    //   a whole tax year) and RULE_ACCOUNTING_PERIOD_NOT_SUPPORTED. The tax year must
+    //   have ended (RULE_ACCOUNTING_PERIOD_NOT_ENDED).
+    //
+    // BSAS API 7.0 retrieve scenarios (GET …/adjustable-summary/{nino}/uk-property/{calculationId}/{taxYear}):
+    //   UK_PROPERTY_PROFIT, UK_PROPERTY_LOSS, UK_PROPERTY_ZERO_ADJUSTMENTS,
+    //   UK_PROPERTY_ALLOWANCE, UK_PROPERTY_CONSOLIDATED, UK_PROPERTY_STATUS_INVALID,
+    //   UK_PROPERTY_STATUS_SUPERSEDED, DYNAMIC_UK_PROPERTY_PROFIT, DYNAMIC_UK_PROPERTY_LOSS,
+    //   NOT_UK_PROPERTY, TAX_YEAR_NOT_SUPPORTED, REQUEST_CANNOT_BE_FULFILLED, STATEFUL
+    //   (and FHL variants for years before 2025-26)
+    //   Foreign property: FOREIGN_PROPERTY_PROFIT, FOREIGN_PROPERTY_LOSS,
+    //   FOREIGN_PROPERTY_ALLOWANCE, DYNAMIC_FOREIGN_PROPERTY_ALLOWANCE,
+    //   FOREIGN_PROPERTY_STATUS_SUPERSEDED, REQUEST_CANNOT_BE_FULFILLED, STATEFUL.
+    //   DYNAMIC_FOREIGN_PROPERTY_PROFIT also works in the sandbox, as seen in
+    //   LibreMTD's own runs. Leave unset for DEFAULT, which gives 404 (no data).
+    //   LibreMTD then carries on without an adjustment step. The canned scenarios
+    //   return their data for any calculationId, including one from a default trigger.
+    //
+    // BSAS API 7.0 submit scenarios (POST …/adjust/{taxYear}):
+    //   UK:      TYPE_OF_BUSINESS_INCORRECT, SUMMARY_STATUS_INVALID,
+    //            SUMMARY_STATUS_SUPERSEDED, ALREADY_ADJUSTED, RESULTING_VALUE_NOT_PERMITTED,
+    //            UK_PROPERTY_OVER_CONSOLIDATED_EXPENSES_THRESHOLD,
+    //            UK_PROPERTY_INCOME_ALLOWANCE_CLAIMED, OUTSIDE_AMENDMENT_WINDOW,
+    //            NOT_FOUND, TAX_YEAR_NOT_SUPPORTED, REQUEST_CANNOT_BE_FULFILLED, STATEFUL
+    //   Foreign: the same, with FOREIGN_PROPERTY_ in place of UK_PROPERTY_ in the
+    //            two allowance and threshold names, plus PROPERTY_ID_MISMATCH.
+    //   The submit endpoints have their own scenario tables, separate from retrieve.
 
     /** Gov-Test-Scenario for the obligations fetch. Null → DEFAULT. */
     val sandboxObligationsScenario: String? by lazy {
@@ -147,10 +187,19 @@ object Config {
     }
 
     /**
+     * Gov-Test-Scenario for Trigger a BSAS, used for both UK and foreign
+     * property. Null → DEFAULT, which succeeds. Useful values for testing
+     * LibreMTD's handling of failures: OBLIGATIONS_NOT_MET,
+     * ACCOUNTING_PERIOD_NOT_ENDED, NO_ACCOUNTING_PERIOD, OUTSIDE_AMENDMENT_WINDOW.
+     */
+    val sandboxBsasTriggerScenario: String? by lazy {
+        System.getenv("HMRC_SANDBOX_BSAS_TRIGGER_SCENARIO")?.takeIf { it.isNotBlank() }
+    }
+
+    /**
      * Gov-Test-Scenario for the UK property BSAS GET
      * (Retrieve a UK Property Business Source Adjustable Summary).
-     * Null → DEFAULT (simulates no data found; BSAS fetch fails gracefully
-     * and the user proceeds to final declaration without a UK adjustment step).
+     * Null → DEFAULT (404, no data; the flow proceeds without a UK adjustment step).
      * Useful values:
      *   UK_PROPERTY_PROFIT  — success response with profit figures
      *   UK_PROPERTY_LOSS    — success response with loss figures
@@ -164,7 +213,9 @@ object Config {
      * (Submit UK Property Accounting Adjustments).
      * Null → DEFAULT (sandbox accepts the submission and returns 200).
      * The POST endpoint has a separate scenario table from the GET;
-     * UK_PROPERTY_PROFIT is not valid here.
+     * UK_PROPERTY_PROFIT is not valid here. ALREADY_ADJUSTED,
+     * SUMMARY_STATUS_SUPERSEDED and RESULTING_VALUE_NOT_PERMITTED are useful for
+     * testing LibreMTD's messages.
      */
     val sandboxBsasUkPropPostScenario: String? by lazy {
         System.getenv("HMRC_SANDBOX_BSAS_UKPROP_POST_SCENARIO")?.takeIf { it.isNotBlank() }
@@ -173,8 +224,7 @@ object Config {
     /**
      * Gov-Test-Scenario for the foreign property BSAS GET
      * (Retrieve a Foreign Property Business Source Adjustable Summary).
-     * Null → DEFAULT (simulates no data found; BSAS fetch fails gracefully
-     * and the user proceeds to final declaration without a foreign adjustment step).
+     * Null → DEFAULT (404, no data; the flow proceeds without a foreign adjustment step).
      * Useful values:
      *   FOREIGN_PROPERTY_PROFIT  — success response with profit figures
      *   FOREIGN_PROPERTY_LOSS    — success response with loss figures
@@ -190,14 +240,16 @@ object Config {
      * (Submit Foreign Property Accounting Adjustments).
      * Null → DEFAULT (sandbox accepts the submission and returns 200).
      * The POST endpoint has a separate scenario table from the GET;
-     * FOREIGN_PROPERTY_PROFIT is not valid here.
+     * FOREIGN_PROPERTY_PROFIT is not valid here. ALREADY_ADJUSTED,
+     * SUMMARY_STATUS_SUPERSEDED, PROPERTY_ID_MISMATCH and
+     * RESULTING_VALUE_NOT_PERMITTED are useful for testing.
      */
     val sandboxBsasForeignPropPostScenario: String? by lazy {
         System.getenv("HMRC_SANDBOX_BSAS_FOREIGNPROP_POST_SCENARIO")?.takeIf { it.isNotBlank() }
     }
 
     /**
-     * Gov-Test-Scenario for the final declaration POST (crystallisation).
+     * Gov-Test-Scenario for the final declaration POST.
      * Null → DEFAULT (simulates success, returns 204).
      */
     val sandboxFinalDeclScenario: String? by lazy {

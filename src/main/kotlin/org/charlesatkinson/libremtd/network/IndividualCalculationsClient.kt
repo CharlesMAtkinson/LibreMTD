@@ -117,6 +117,16 @@ data class TaxCalculationSummary(
     val totalLiability:   Double,
 )
 
+/**
+ * The path of Submit a Self Assessment Final Declaration:
+ * POST /individuals/calculations/{nino}/self-assessment/{taxYear}/{calculationId}/final-declaration
+ *
+ * A top-level function so the path can be unit tested. (An earlier version of
+ * this client used /crystallisation, which is not the right path.)
+ */
+internal fun finalDeclarationPath(nino: String, taxYear: String, calculationId: String): String =
+    "/individuals/calculations/$nino/self-assessment/$taxYear/$calculationId/final-declaration"
+
 // ── Client ────────────────────────────────────────────────────────────────────
 
 class IndividualCalculationsClient(private val apiClient: HmrcApiClient) {
@@ -272,16 +282,20 @@ class IndividualCalculationsClient(private val apiClient: HmrcApiClient) {
     }
 
     /**
-     * Submits the Self Assessment Final Declaration (crystallisation).
+     * Submits the Self Assessment Final Declaration.
      *
-     * Must be called after [triggerAndFetch] with calculationType = "intent-to-finalise".
-     * Uses the calculationId returned by that call.
+     * Must be called after [triggerAndFetch] with calculationType =
+     * "intent-to-finalise", using the calculationId which that call returned.
+     * (This is a different id from the one of a BSAS: see BsasClient.triggerBsas.)
      *
-     * POST /individuals/calculations/{nino}/self-assessment/{taxYear}/{calculationId}/crystallisation
+     * POST /individuals/calculations/{nino}/self-assessment/{taxYear}/{calculationId}/final-declaration
      *
      * → 204 No Content on success (no response body)
      *
-     * API version: 8.0Friday 5th June 10:30am
+     * This method does not record the submission in the database: the caller
+     * does that after a success.
+     *
+     * API version: 8.0
      */
     suspend fun submitFinalDeclaration(
         nino: String,
@@ -296,7 +310,7 @@ class IndividualCalculationsClient(private val apiClient: HmrcApiClient) {
         else
             emptyMap()
 
-        val path = "/individuals/calculations/$nino/self-assessment/$taxYear/$calculationId/crystallisation"
+        val path = finalDeclarationPath(nino, taxYear, calculationId)
 
         logger.info { "Submitting final declaration: POST $path" }
 

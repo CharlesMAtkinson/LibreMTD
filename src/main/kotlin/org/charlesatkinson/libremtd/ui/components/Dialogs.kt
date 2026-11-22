@@ -31,10 +31,10 @@ private val logger = KotlinLogging.logger {}
 /**
  * Application-wide dialog helpers.
  *
- * showError() presents a copyable Label inside an ERROR Alert. The user can
- * context-click the message text and choose Copy to copy it to the clipboard —
- * useful for pasting API error bodies into a support request or log. This
- * feature is documented in the Help.
+ * showError() and showInfo() present a copyable Label inside an ERROR or
+ * INFORMATION Alert. The user can context-click the message text and choose
+ * Copy to copy it to the clipboard — useful for pasting API error bodies into
+ * a support request or log. This feature is documented in the Help.
  *
  * All UI panes should use these instead of inline Alert construction so that the
  * look and behaviour are consistent throughout the application.
@@ -77,11 +77,28 @@ object Dialogs {
      * @param title    Optional window title (defaults to "Error").
      */
     fun showError(message: String, title: String = "Error") {
+        showAlert(Alert.AlertType.ERROR, message, title)
+    }
+
+    /**
+     * Shows a modal INFORMATION alert whose content is a selectable, copyable
+     * Label. Blocks until the user dismisses it. For a notice which the user
+     * must not miss, such as the reason a step was skipped, so it is a pop-up
+     * rather than a status bar message which the next message replaces.
+     *
+     * @param message  The text to display.
+     * @param title    Optional window title (defaults to "Information").
+     */
+    fun showInfo(message: String, title: String = "Information") {
+        showAlert(Alert.AlertType.INFORMATION, message, title)
+    }
+
+    private fun showAlert(type: Alert.AlertType, message: String, title: String) {
         val label = wrappingLabel(message).apply {
             maxWidth = 480.0
         }
 
-        Alert(Alert.AlertType.ERROR).apply {
+        Alert(type).apply {
             this.title           = title
             headerText           = null
             dialogPane.content   = label

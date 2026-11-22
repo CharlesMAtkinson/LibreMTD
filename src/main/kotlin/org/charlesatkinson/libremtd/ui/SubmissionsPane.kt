@@ -20,8 +20,13 @@ package org.charlesatkinson.libremtd.ui
 import javafx.geometry.Insets
 import javafx.scene.layout.VBox
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.javafx.JavaFx
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import mu.KotlinLogging
 import org.charlesatkinson.libremtd.database.SettingsRepository
+import org.charlesatkinson.libremtd.database.SubmissionRepository
 import org.charlesatkinson.libremtd.network.ClientContext
 import org.charlesatkinson.libremtd.network.HmrcApiClient
 import org.charlesatkinson.libremtd.ui.components.RefreshableRoot
@@ -44,6 +49,17 @@ class SubmissionsPane(
     private lateinit var selectedYear: String
     private lateinit var sectionsBox:  VBox
 
+    // The two submit sections, kept so they can be hidden. They are of no
+    // use while a final declaration is in progress, nor once the year has
+    // been finally declared (it is then locked). Rebuilt by refreshSections().
+    private lateinit var ukSubmitNode:      VBox
+    private lateinit var foreignSubmitNode: VBox
+
+    // True from the start of a final declaration until it is cancelled. Reset
+    // when the sections are rebuilt, because the new final declaration
+    // section starts idle. Read on the JavaFX thread only.
+    private var declarationInProgress = false
+
     private val obligationsSection = ObligationsSection(
         scope, userId, settingsRepository, getApiClient, getContext,
     )
@@ -64,6 +80,14 @@ class SubmissionsPane(
     private val finalDeclarationSection = FinalDeclarationSection(
         scope, userId, settingsRepository, getApiClient, getContext, onStatusChange,
         getObligations = { obligationsSection.currentObligations() },
+        // A declaration which belongs to a tax year no longer selected is
+        // ignored: refreshSections() has already replaced its sections.
+        onInProgressChange = { taxYear, inProgress ->
+            if (taxYear == selectedYear) {
+                declarationInProgress = inProgress
+                updateSubmitSectionsVisibility()
+            }
+        },
     )
 
     private val taxYearSelector = TaxYearSelector(userId = userId) { year ->
@@ -113,12 +137,61 @@ class SubmissionsPane(
         }
     }
 
+    /**
+     * Shows or hides the UK and foreign submit sections. Hidden sections
+     * take no layout space.
+     */
+    private fun setSubmitSectionsVisible(visible: Boolean) {
+        if (!::ukSubmitNode.isInitialized || !::foreignSubmitNode.isInitialized) return
+        listOf(ukSubmitNode, foreignSubmitNode).forEach {
+            it.isVisible = visible
+            it.isManaged = visible
+        }
+    }
+
+    /**
+     * Hides the submit sections while a final declaration is in progress, and
+     * for any year which has been finally declared. Otherwise shows them.
+     *
+     * While a declaration is in progress they are hidden at once. Otherwise
+     * the database is asked, on a background thread, whether the year is
+     * finally declared. A result is dropped if, by the time it arrives, a
+     * declaration has started or another tax year has been selected: a
+     * stale answer must not show sections which should be hidden.
+     */
+    private fun updateSubmitSectionsVisibility() {
+        if (declarationInProgress) {
+            setSubmitSectionsVisible(false)
+            return
+        }
+
+        val year = selectedYear
+        scope.launch(Dispatchers.IO) {
+            val locked = SubmissionRepository.isFinalDeclared(userId, year)
+            withContext(Dispatchers.JavaFx) {
+                if (year == selectedYear && !declarationInProgress) {
+                    setSubmitSectionsVisible(!locked)
+                }
+            }
+        }
+    }
+
     private fun refreshSections() {
+        // The final declaration section is rebuilt here too, and starts idle.
+        declarationInProgress = false
+
+        ukSubmitNode      = submitSection.build(selectedYear)
+        foreignSubmitNode = foreignSubmitSection.build(selectedYear)
+
         sectionsBox.children.setAll(
             obligationsSection.build(selectedYear),
-            submitSection.build(selectedYear),
-            foreignSubmitSection.build(selectedYear),
+            ukSubmitNode,
+            foreignSubmitNode,
             finalDeclarationSection.build(selectedYear),
         )
+
+        // The new sections start visible. Hide them again at once if the
+        // year has already been finally declared.
+        updateSubmitSectionsVisibility()
     }
 }
