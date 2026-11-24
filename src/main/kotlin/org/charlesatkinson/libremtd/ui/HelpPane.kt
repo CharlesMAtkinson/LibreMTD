@@ -266,7 +266,9 @@ class HelpPane(
                         "computer crashes there is nothing to clean up: the lock is released " +
                         "automatically."),
                 subheading("Files"),
-                body("Log directory: \$XDG_STATE_HOME/LibreMTD/log, normally ~/.local/state/LibreMTD/log"),
+                body("Log directory: \$XDG_STATE_HOME/LibreMTD/log, normally ~/.local/state/LibreMTD/log.  " +
+                        "The directory and the log files can be read only by you, because log files " +
+                        "can contain sensitive data such as your NINO and UTR."),
                 body("Log files: app.log before login and after logout, and <user name>.log while " +
                         "a user is logged in.  Characters in a user name other than letters, digits, " +
                         "full stops, hyphens and underscores are replaced by underscores in the file name."),
@@ -278,9 +280,20 @@ class HelpPane(
                         "user who does not log in again are left exactly as they are.  You can " +
                         "delete them yourself."),
                 body("Database directory: \$XDG_DATA_HOME/LibreMTD, normally ~/.local/share/LibreMTD.  " +
-                        "The database is app.db there."),
+                        "The database is app.db there.  The directory can be read only by you."),
                 body("Lock files: \$XDG_DATA_HOME/LibreMTD/locks, normally ~/.local/share/LibreMTD/locks.  " +
-                        "There is one per user.  They are never deleted and are safe to ignore."),
+                        "There is one per user.  They are never deleted and are safe to ignore.  " +
+                        "They are kept beside the database rather than in \$XDG_RUNTIME_DIR, " +
+                        "which the system may empty when you log out of the computer."),
+                body("WebView directory: \$XDG_STATE_HOME/LibreMTD/webview, normally " +
+                        "~/.local/state/LibreMTD/webview.  The window in which you sign in to HMRC " +
+                        "keeps its browser storage in a separate sub-directory for each LibreMTD " +
+                        "user, named after the user in the same way as the log file (for example " +
+                        "webview/alice), so what HMRC's sign-in pages remember is not shared " +
+                        "between LibreMTD users.  The directory can be read only by you.  " +
+                        "It is safe to delete while LibreMTD is not running: you will just have " +
+                        "to sign in to HMRC again.  An earlier version of LibreMTD used " +
+                        "~/.org.charlesatkinson.libremtd.LibreMTD instead, which you can delete."),
                 body("Device ID: /var/tmp/LibreMTD-deviceId"),
                 body("Licence ID: /var/tmp/LibreMTD-licenceId"),
                 body("The device ID and licence ID files are shared by every Linux user of the " +

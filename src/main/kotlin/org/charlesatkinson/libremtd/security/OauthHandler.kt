@@ -33,7 +33,9 @@ import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 import org.charlesatkinson.libremtd.security.TokenStore
 import org.charlesatkinson.libremtd.ui.components.UiPreferences
+import org.charlesatkinson.libremtd.utils.AppPaths
 import org.charlesatkinson.libremtd.utils.Config
+import org.charlesatkinson.libremtd.utils.UserLogging
 import java.net.URI
 import java.net.URLEncoder
 import java.net.http.HttpClient
@@ -215,11 +217,46 @@ class OAuth2Handler(
 
     // ── Browser callback ──────────────────────────────────────────────────────
 
+    /**
+     * Makes the WebView keep its local storage (cookies, local storage and so
+     * on) in LibreMTD's own per-user directory under $XDG_STATE_HOME, instead
+     * of the directory JavaFX would otherwise choose in the home directory
+     * (~/.org.charlesatkinson.libremtd.LibreMTD). See AppPaths.webViewDataDir.
+     *
+     * The directory is named after the logged-in user in the same way as the
+     * user's log file, so it uses UserLogging's current name, which
+     * LoginScreen sets at login and clears at logout. It must be called after
+     * the WebView is created and before anything is loaded into it. If there
+     * is no current user, or the directory cannot be made, the problem is
+     * logged and JavaFX's own default is left in place, so that it does not
+     * stop the user connecting to HMRC.
+     *
+     * Per user, so that whatever HMRC's sign-in pages remember is not shared
+     * between LibreMTD users. WebKit may treat the directory as process-wide,
+     * so only the first one set in a process might take effect: see the
+     * development log entry on WebView storage.
+     */
+    private fun configureWebViewStorage(webView: WebView) {
+        val userName = UserLogging.currentLogNameOrNull()
+        if (userName == null) {
+            logger.error { "No user is logged in, so no WebView data directory is set; JavaFX will use its own default" }
+            return
+        }
+        try {
+            val dir = AppPaths.webViewDataDir(userName)
+            webView.engine.userDataDirectory = dir.toFile()
+            logger.info { "WebView data directory: $dir" }
+        } catch (e: Exception) {
+            logger.error(e) { "Could not set the WebView data directory; JavaFX will use its own default" }
+        }
+    }
+
     private suspend fun openBrowserAndWaitForCallback(authUrl: String): String? =
         suspendCancellableCoroutine { continuation ->
             Platform.runLater {
                 try {
                     val webView = WebView()
+                    configureWebViewStorage(webView)
                     val stage   = Stage()
                     stage.title = "HMRC Authorisation"
 

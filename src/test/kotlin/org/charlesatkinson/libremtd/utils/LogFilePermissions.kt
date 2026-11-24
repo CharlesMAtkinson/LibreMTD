@@ -30,6 +30,8 @@ import kotlin.test.assertEquals
 
 class LogFilePermissionsTest {
 
+    private val ownerOnly = PosixFilePermissions.fromString("rw-------")
+
     @Test
     fun `fixes permissions on the active log file and rolled-over log files`(@TempDir tempDir: Path) {
         assumeTrue(FileSystems.getDefault().supportedFileAttributeViews().contains("posix"))
@@ -45,9 +47,21 @@ class LogFilePermissionsTest {
 
         enforceLogFilePermissions(tempDir)
 
-        val expected = PosixFilePermissions.fromString("rw-rw----")
-        assertEquals(expected, Files.getPosixFilePermissions(activeLog))
-        assertEquals(expected, Files.getPosixFilePermissions(rolledLog))
+        assertEquals(ownerOnly, Files.getPosixFilePermissions(activeLog))
+        assertEquals(ownerOnly, Files.getPosixFilePermissions(rolledLog))
+    }
+
+    @Test
+    fun `removes the group access which earlier versions allowed`(@TempDir tempDir: Path) {
+        assumeTrue(FileSystems.getDefault().supportedFileAttributeViews().contains("posix"))
+
+        val log = tempDir.resolve("alice.log")
+        Files.createFile(log)
+        Files.setPosixFilePermissions(log, PosixFilePermissions.fromString("rw-rw----"))
+
+        enforceLogFilePermissions(tempDir)
+
+        assertEquals(ownerOnly, Files.getPosixFilePermissions(log))
     }
 
     @Test
@@ -64,9 +78,8 @@ class LogFilePermissionsTest {
 
         enforceLogFilePermissions(tempDir)
 
-        val expected = PosixFilePermissions.fromString("rw-rw----")
         listOf(userLog, rolledLog, oddName).forEach {
-            assertEquals(expected, Files.getPosixFilePermissions(it), it.fileName.toString())
+            assertEquals(ownerOnly, Files.getPosixFilePermissions(it), it.fileName.toString())
         }
     }
 

@@ -29,12 +29,11 @@ import kotlin.concurrent.timer
 
 /**
  * The permission every LibreMTD log file should have: readable and
- * writable by the owner and group, and completely inaccessible to
- * everyone else. Log files can contain sensitive data such as NINOs
- * and UTRs, so this is deliberately tighter than the world-readable
- * permissions some existing log files currently have.
+ * writable by the owner only, and completely inaccessible to everyone
+ * else, including the owner's group. Log files can contain sensitive
+ * data such as NINOs and UTRs.
  */
-private val LOG_FILE_PERMISSIONS = PosixFilePermissions.fromString("rw-rw----")
+private val LOG_FILE_PERMISSIONS = PosixFilePermissions.fromString("rw-------")
 
 /**
  * Every file in the log directory which LibreMTD's logging can create:
@@ -48,7 +47,7 @@ private val LOG_FILE_NAME_PATTERN = Regex("""[A-Za-z0-9._-]+\.log""")
 /**
  * Scans [logDir] for files matching the log naming pattern
  * (app.log, alice.log, app-2026-01-08.log, etc.) and, on POSIX
- * filesystems, sets their permissions to rw-rw---- if they are not
+ * filesystems, sets their permissions to rw------- if they are not
  * already correct.
  *
  * This exists because Logback does not manage file permissions itself:
@@ -58,7 +57,8 @@ private val LOG_FILE_NAME_PATTERN = Regex("""[A-Za-z0-9._-]+\.log""")
  * starts, after each login (which creates that user's log file), and
  * periodically thereafter, keeps permissions consistent regardless of
  * the umask in effect when the process was launched or when a file is
- * rolled over.
+ * rolled over. It also corrects files left with the group-readable
+ * permissions (rw-rw----) which earlier versions of LibreMTD used.
  *
  * Does nothing on non-POSIX filesystems (e.g. Windows). Silently
  * skips any file it cannot change, so a permissions problem never
