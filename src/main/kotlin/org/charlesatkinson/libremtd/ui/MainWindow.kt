@@ -32,6 +32,7 @@ import org.charlesatkinson.libremtd.database.SettingsRepository
 import org.charlesatkinson.libremtd.database.User
 import org.charlesatkinson.libremtd.network.ClientContext
 import org.charlesatkinson.libremtd.network.HmrcApiClient
+import org.charlesatkinson.libremtd.security.AuthorisationWindow
 import org.charlesatkinson.libremtd.security.FraudPreventionHeaders
 import org.charlesatkinson.libremtd.security.OAuth2Handler
 import org.charlesatkinson.libremtd.security.TokenStore
@@ -79,6 +80,19 @@ enum class NavDestination(val label: String, val navLabel: String = label) {
 // Destinations whose panes must not be cached because they depend on
 // connection / settings state that may change between visits.
 private val UNCACHED_DESTINATIONS = setOf(NavDestination.HmrcConnect)
+
+/**
+ * The status bar message to show after navigating to [dest]. Normally
+ * "Viewing: <label>", but the Connect pane, visited while an HMRC
+ * authorisation window is open, keeps saying that authentication is in
+ * progress: otherwise the "Viewing" message would replace it, as the pane
+ * is rebuilt on every visit.
+ *
+ * A top-level function so it can be unit tested without the JavaFX toolkit.
+ */
+internal fun navigationStatusText(dest: NavDestination, authorising: Boolean): String =
+    if (dest == NavDestination.HmrcConnect && authorising) AUTHENTICATING_STATUS_TEXT
+    else "Viewing: ${dest.label}"
 
 /**
  * The panes which list entries from the database. They load their entries
@@ -391,7 +405,10 @@ class MainWindow(
         try {
             val pane = resolvePane(dest, UNCACHED_DESTINATIONS, paneCache, ::buildFreshPane)
             contentArea.center = pane
-            setStatus("Viewing: ${dest.label}")
+            // Written after the pane is built, so it replaces anything the
+            // pane wrote while being built. navigationStatusText takes that
+            // into account for the Connect pane.
+            setStatus(navigationStatusText(dest, AuthorisationWindow.isActive()))
         } catch (e: Exception) {
             logger.error(e) { "Failed to build pane for $dest" }
             setStatus("Error opening ${dest.label} — see log")

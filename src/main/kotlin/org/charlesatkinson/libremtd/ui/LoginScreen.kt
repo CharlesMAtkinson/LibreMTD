@@ -33,6 +33,7 @@ import org.charlesatkinson.libremtd.database.User
 import org.charlesatkinson.libremtd.database.UserRepository
 import org.charlesatkinson.libremtd.utils.Config
 import org.charlesatkinson.libremtd.database.SettingsRepository
+import org.charlesatkinson.libremtd.security.AuthorisationWindow
 import org.charlesatkinson.libremtd.security.TokenStore
 import org.charlesatkinson.libremtd.ui.components.ThemeManager
 import org.charlesatkinson.libremtd.ui.components.UiPreferences
@@ -384,6 +385,10 @@ class LoginScreen(
 
         detachGeometrySaving()
         HelpWindow.close()
+        // An HMRC authorisation window left open would otherwise survive
+        // into the next user's session. Closing it ends the waiting
+        // authorisation as cancelled.
+        AuthorisationWindow.closeIfOpen()
         SessionInstanceLock.release()
         UserLogging.clearCurrentUser()
 

@@ -99,6 +99,13 @@ class OAuth2Handler(
      * Opens an embedded browser window for the user to authenticate with HMRC,
      * then exchanges the returned authorisation code for access and refresh tokens.
      * Times out after 5 minutes if the user neither completes nor cancels the flow.
+     *
+     * The caller must already hold AuthorisationWindow (tryBegin, on the
+     * JavaFX thread) and must call AuthorisationWindow.end() when this
+     * returns, whatever the outcome. That is what keeps the user to one
+     * authorisation window at a time. If the window is closed by anything
+     * other than this flow finishing (the user, or a log out), this returns
+     * null.
      */
     suspend fun authorize(
         scopes: List<String> = listOf("read:self-assessment", "write:self-assessment"),
@@ -364,7 +371,22 @@ class OAuth2Handler(
                         }
                     }
 
+                    // Runs whenever the window goes away, however it was closed.
+                    // The close request handler above is not called when code
+                    // closes the window (for example a log out), so without
+                    // this the flow would wait for its five minute timeout.
+                    stage.setOnHidden {
+                        AuthorisationWindow.unregister(stage)
+                        if (!resumed) {
+                            resumed = true
+                            logger.info { "Authorisation window closed without a result, so treated as cancelled" }
+                            saveGeometry()
+                            continuation.resumeWith(Result.success(null))
+                        }
+                    }
+
                     webView.engine.load(authUrl)
+                    AuthorisationWindow.register(stage)
                     stage.show()
                     logger.info { "OAuth2 browser window shown" }
 
