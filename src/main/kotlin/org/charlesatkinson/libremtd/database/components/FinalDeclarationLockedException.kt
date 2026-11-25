@@ -20,11 +20,11 @@
 package org.charlesatkinson.libremtd.database.components
 
 /**
- * Thrown when code attempts to create, edit or delete an income, expense,
- * allowance or foreign property election entry for a tax year that has
- * already been finally declared to HMRC for the relevant user. UI code
- * should catch this specifically and show a friendly message, rather than
- * a generic error dialog.
+ * Thrown when code attempts to create, edit or delete an income, expense
+ * or foreign property election entry for a tax year that has already been
+ * finally declared to HMRC for the relevant user. UI code should catch
+ * this specifically and show a friendly message, rather than a generic
+ * error dialog.
  */
 class FinalDeclarationLockedException(val taxYear: String) :
     RuntimeException("Tax year $taxYear has been finally declared and can no longer be amended.")

@@ -18,7 +18,6 @@
 package org.charlesatkinson.libremtd.database
 
 import mu.KotlinLogging
-import org.charlesatkinson.libremtd.database.tables.AllowanceEntries
 import org.charlesatkinson.libremtd.database.tables.ExpensePropertyForeignEntries
 import org.charlesatkinson.libremtd.database.tables.ExpensePropertyUkEntries
 import org.charlesatkinson.libremtd.database.tables.ForeignPropertyElections
@@ -56,7 +55,6 @@ object Database {
         // Exposed schema
         transaction {
             SchemaUtils.create(
-                AllowanceEntries,
                 ExpensePropertyForeignEntries,
                 ExpensePropertyUkEntries,
                 ForeignPropertyElections,

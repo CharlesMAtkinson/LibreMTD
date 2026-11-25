@@ -48,7 +48,6 @@ class HelpPane(
         PropertyIncome("Income (property)"),
         SavingsIncome("Income (savings)"),
         Expenses("Expenses"),
-        Allowances("Allowances"),
         Submissions("Submissions"),
         // ACCOUNT
         HmrcConnect("HMRC Connect"),
@@ -76,7 +75,6 @@ class HelpPane(
         SidebarItem.TopicItem(Topic.PropertyIncome),
         SidebarItem.TopicItem(Topic.SavingsIncome),
         SidebarItem.TopicItem(Topic.Expenses),
-        SidebarItem.TopicItem(Topic.Allowances),
         SidebarItem.TopicItem(Topic.Submissions),
         SidebarItem.SectionLabel("ACCOUNT"),
         SidebarItem.TopicItem(Topic.HmrcConnect),
@@ -127,7 +125,7 @@ class HelpPane(
     }
 
     init {
-        // Wire selection — skip section labels (they are disabled but guard anyway)
+        // Wire selection - skip section labels (they are disabled but guard anyway)
         topicList.selectionModel.selectedItemProperty().addListener { _, _, item ->
             if (item is SidebarItem.TopicItem) showTopic(item.topic)
         }
@@ -138,7 +136,9 @@ class HelpPane(
         minHeight = 0.0
         maxHeight = Double.MAX_VALUE
 
-        // Resolve initial topic: prefer constructor arg, else last saved, else Introduction
+        // Resolve initial topic: prefer constructor arg, else last saved, else Introduction.
+        // A saved name which is no longer a topic (such as the removed
+        // "Allowances") matches nothing and so falls back to Introduction.
         val startTopic = initialTopic.takeIf { it != Topic.Introduction }
             ?: prefs.lastHelpTopic
                 ?.let { name -> Topic.entries.firstOrNull { it.name == name } }
@@ -158,7 +158,7 @@ class HelpPane(
         }.takeIf { it >= 0 } ?: 0
 
         if (topicList.selectionModel.selectedIndex == index) {
-            // Selection unchanged — the listener above won't fire, so show explicitly.
+            // Selection unchanged - the listener above won't fire, so show explicitly.
             showTopic(topic)
         } else {
             topicList.selectionModel.select(index)
@@ -180,9 +180,9 @@ class HelpPane(
                      {NL}{NL}
                      The pane has three sections. UK dividends from companies and funds covers cash
                      dividends from UK companies and dividends from UK unit trusts and OEICs (shown on 
-                     fund platform tax certificates). UK dividends — special types covers stock dividends 
+                     fund platform tax certificates). UK dividends - special types covers stock dividends 
                      (shares received instead of cash), redeemable shares, bonus issues of securities, and 
-                     close company loans written off — these arise in unusual circumstances. Foreign 
+                     close company loans written off - these arise in unusual circumstances. Foreign 
                      dividends covers dividends from overseas companies and dividend income received 
                      whilst abroad; each entry is per country and requires the taxable amount; other fields 
                      are optional.
@@ -201,9 +201,6 @@ class HelpPane(
                 "Record allowable property expenses such as repairs, insurance, and agent fees.  " +
                         "The consolidated expenses scheme is not supported so all expenses are assigned " +
                         "to a category.")
-            Topic.Allowances    -> buildPlaceholderPane("Allowances",
-                "Claim the Property Income Allowance (up to £1,000) instead of actual expenses, " +
-                        "or record other allowances applicable to your situation.")
             Topic.Submissions   -> buildPlaceholderPane("Submissions",
                 "Submit quarterly updates, End of Period Statements (EOPS), and the Final " +
                         "Declaration to HMRC via the MTD API.")
@@ -237,21 +234,21 @@ class HelpPane(
         VBox(14.0).apply {
             padding = Insets(8.0)
             children.addAll(
-                heading("LibreMTD — Introduction"),
+                heading("LibreMTD - Introduction"),
                 body(
                     "LibreMTD is free and open-source software (FOSS) for submitting " +
                             "quarterly updates and end-of-period statements to HMRC under " +
                             "Making Tax Digital for Income Tax Self Assessment (MTD ITSA)."
                 ),
                 subheading("What LibreMTD supports"),
-                body("Property income — record rental income and allowable expenses for " +
+                body("Property income - record rental income and allowable expenses for " +
                         "furnished and unfurnished UK residential lettings, including furnished " +
                         "holiday lettings.  " +
                         "The property income allowance and rent-a-room schemes are not supported."
                 ),
-                body("Dividend income — record dividends received from UK and overseas companies."),
-                body("Savings income — record interest from UK bank and building society accounts."),
-                body("Submissions — submit quarterly updates for 6 April to 5 April tax years " +
+                body("Dividend income - record dividends received from UK and overseas companies."),
+                body("Savings income - record interest from UK bank and building society accounts."),
+                body("Submissions - submit quarterly updates for 6 April to 5 April tax years " +
                         "and the final declaration directly to HMRC"),
                 subheading("Copying user interface text"),
                 body("Text in this window and dynamic text such as error messages may be copied by " +
@@ -305,7 +302,7 @@ class HelpPane(
                 hyperlink("https://github.com/charlesatkinson/libremtd"),
                 subheading("Disclaimer"),
                 body("LibreMTD is independent software. It is not affiliated with, endorsed by, " +
-                        "or supported by HMRC. Tax rules change — always verify your figures and " +
+                        "or supported by HMRC. Tax rules change - always verify your figures and " +
                         "submission obligations against current guidance on gov.uk. " +
                         "LibreMTD does not provide tax advice."),
             )

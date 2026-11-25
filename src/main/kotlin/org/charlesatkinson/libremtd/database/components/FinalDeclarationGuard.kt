@@ -23,9 +23,9 @@ import org.charlesatkinson.libremtd.database.SubmissionRepository
 import org.charlesatkinson.libremtd.database.taxYearForDate
 
 /**
- * Central enforcement point for the rule that no income, expense, allowance
- * or foreign property election entry may be created, edited or deleted for
- * a tax year once that year has been finally declared to HMRC (see
+ * Central enforcement point for the rule that no income, expense or foreign
+ * property election entry may be created, edited or deleted for a tax year
+ * once that year has been finally declared to HMRC (see
  * SubmissionRepository.isFinalDeclared).
  *
  * Called from the entry repositories themselves, at the start of their
